@@ -1,0 +1,10 @@
+__pycache__/
+.env
+venv/
+.vscode/
+.idea/
+*.pyc
+.playwright/
+node_modules/
+dist/
+build/

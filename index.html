@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Music Tier List · Spotify</title>
+<meta name="description" content="Classifique músicas da sua playlist do Spotify em tiers S a F com arrastar e soltar." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="style.css?v=2" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%231db954'/%3E%3Ctext x='12' y='17' text-anchor='middle' font-family='sans-serif' font-weight='800' font-size='13' fill='%23000'%3ES%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" width="28" height="28" viewBox="0 0 24 24" fill="none" aria-label="Tier List logo">
+        <rect x="1" y="1" width="22" height="22" rx="5" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M7 8h10M7 12h6M7 16h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <h1>Music Tier List</h1>
+    </div>
+    <div class="topbar-actions">
+      <button id="btnShare" class="btn-ghost" title="Copiar link compartilhável" data-testid="button-share">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        Compartilhar
+      </button>
+      <button id="btnExport" class="btn-ghost" title="Exportar como PNG" data-testid="button-export">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Exportar PNG
+      </button>
+      <button id="btnTheme" class="btn-ghost icon-only" title="Alternar tema" data-testid="button-theme" data-theme-toggle></button>
+      <button id="btnTheme" class="btn-ghost icon-only" title="Alternar tema" data-testid="button-theme" data-theme-toggle></button>
+    </div>
+  </header>
+
+  <main class="app">
+
+    <!-- Playlist import -->
+    <section class="playlist-bar">
+      <div class="playlist-input">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <input id="playlistUrl" placeholder="Cole o link da playlist do Spotify (ou ID)" data-testid="input-playlist-url" />
+        <button id="btnLoadPlaylist" class="btn-primary" data-testid="button-load-playlist">Carregar</button>
+      </div>
+      <p class="hint" style="margin: 6px 0 0; font-size: 12px; opacity: 0.7;">✨ Digite a URL de qualquer playlist do Spotify e nossa API coletará as músicas automaticamente!</p>
+      
+      <div id="loadingContainer" class="loading-container" hidden>
+        <div class="loading-bar">
+          <div id="loadingProgress" class="loading-progress"></div>
+        </div>
+        <p id="loadingStatus">Iniciando robô de busca...</p>
+      </div>
+      <div class="playlist-meta" id="playlistMeta" hidden>
+        <img id="playlistCover" alt="" />
+        <div>
+          <div class="playlist-name" id="playlistName"></div>
+          <div class="playlist-sub" id="playlistSub"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Controls: filter + reset -->
+    <section class="controls">
+      <div class="filter-styles" id="filterStyles"></div>
+      <div class="controls-right">
+        <button id="btnEditStyles" class="btn-ghost" data-testid="button-edit-styles">Editar estilos</button>
+        <button id="btnReset" class="btn-ghost danger" data-testid="button-reset">Limpar tiers</button>
+      </div>
+    </section>
+
+    <!-- Tier list board -->
+    <section id="tierBoard" class="tier-board">
+      <!-- Injected by JS -->
+    </section>
+
+    <!-- Pool -->
+    <section class="pool-section">
+      <div class="pool-header">
+        <h3>Músicas para classificar</h3>
+        <span class="muted" id="poolCount">0</span>
+      </div>
+      <div id="pool" class="pool" data-testid="pool-unranked">
+        <div class="empty-state" id="emptyState">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <p>Cole o link de qualquer playlist do Spotify aberta ao público para raspar instantaneamente ou experimente dados de exemplo abaixo.</p>
+          <button class="btn-ghost" id="btnLoadDemo" data-testid="button-demo">Carregar Tierlist de Exemplo</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Styles editor modal -->
+  <div id="stylesModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Editar estilos</h2>
+        <button class="btn-icon" data-close-modal aria-label="Fechar">✕</button>
+      </div>
+      <p class="muted">Use estilos para agrupar e filtrar músicas. Cada música pode ter um estilo atribuído.</p>
+      <div id="stylesList" class="styles-list"></div>
+      <div class="modal-foot">
+        <button id="btnAddStyle" class="btn-ghost">+ Adicionar estilo</button>
+        <button class="btn-primary" data-close-modal>Concluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- Libs -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="app.js?v=2" type="module"></script>
+</body>
+</html>
