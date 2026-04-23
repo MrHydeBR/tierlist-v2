@@ -43,11 +43,15 @@ def scrape_spotify_generator(url: str):
         )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1000, "height": 800}
+            viewport={"width": 800, "height": 600}
         )
+        
+        # Bloquear imagens e outros recursos pesados para economizar MUITA RAM
         page = context.new_page()
+        page.route("**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
         
         try:
+            start_time = time.time()
             # Envia um pingo inicial para o frontend saber que estamos vivos
             yield json.dumps({"status": "connected"}) + "\n"
 
@@ -119,8 +123,10 @@ def scrape_spotify_generator(url: str):
                 else: 
                     stuck_count = 0
 
-                # Para apenas se ficar travado por muito tempo (fim da página real)
-                if stuck_count > 35:
+                # Para se ficar travado ou se o tempo total estourar (2 min)
+                elapsed = time.time() - start_time
+                if stuck_count > 15 or elapsed > 120:
+                    logger.info(f"Finalizando por timeout ou falta de progresso. Tempo: {elapsed:.1f}s")
                     break
                 
                 # Rolar para baixo usando teclado e JS (mais confiável em servidores)
