@@ -69,8 +69,15 @@ def scrape_spotify_generator(url: str):
                     time.sleep(2)
             except: pass
 
-            page.mouse.click(600, 500)
+            # Clica no topo (área neutra) para dar foco sem clicar em músicas
+            page.mouse.click(500, 150)
             yield json.dumps({"status": "searching"}) + "\n"
+            
+            # Dá um "pulo" pro fim da página para acordar o lazy-load
+            page.keyboard.press("End")
+            time.sleep(2)
+            page.keyboard.press("Home")
+            time.sleep(1)
 
             tracks_sent = set()
             stuck_count = 0
@@ -90,11 +97,6 @@ def scrape_spotify_generator(url: str):
                         
                         const row = link.closest('[role="row"], [data-testid="tracklist-row"], div:has(img)');
                         if (!row) return;
-
-                        // Busca qualquer número na linha que pareça um índice
-                        const text = row.innerText;
-                        const hasNumber = /\\d+/.test(text.split('\\n')[0]) || /\\d+/.test(text.slice(0, 10));
-                        if (!hasNumber) return;
 
                         const title = link.innerText.trim();
                         if (!title) return;
