@@ -119,9 +119,8 @@ def scrape_spotify_generator(url: str):
                 else: 
                     stuck_count = 0
 
-                # Critério de parada mais tolerante
-                recs = page.locator('h2:has-text("Recomendado"), h2:has-text("Recommended")').first
-                if (recs.count() and recs.is_visible()) or stuck_count > 35:
+                # Para apenas se ficar travado por muito tempo (fim da página real)
+                if stuck_count > 35:
                     break
                 
                 # Rolar para baixo usando teclado e JS (mais confiável em servidores)
