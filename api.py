@@ -70,21 +70,27 @@ def scrape_spotify_generator(url: str):
                 if len(tracks_sent) >= 200: break
 
                 batch = page.evaluate("""() => {
-                    // Mira Laser: Foca apenas no container principal da playlist
-                    const container = document.querySelector('[data-testid="playlist-tracklist"]') || document.body;
-                    const trackLinks = Array.from(container.querySelectorAll('a[href*="/track/"]'));
                     const results = [];
+                    // Busca todos os links de música
+                    const trackLinks = Array.from(document.querySelectorAll('a[href*="/track/"]'));
                     
                     trackLinks.forEach(link => {
                         const href = link.getAttribute('href');
                         const idMatch = href.match(/\/track\/([a-zA-Z0-9]+)/);
                         if (!idMatch) return;
                         const id = idMatch[1];
+                        
+                        // Busca o container da linha (o row do Spotify)
+                        const row = link.closest('[role="row"], [data-testid="tracklist-row"], div:has(img)');
+                        if (!row) return;
+
+                        // REGRA DE OURO: Só aceita se tiver o número do índice (#)
+                        // Isso filtra as recomendações automaticamente!
+                        const hasIndex = !!row.querySelector('[data-testid="tracklist-row-index-column"], .index-column, span[dir="auto"]');
+                        if (!hasIndex) return;
+
                         const title = link.innerText.trim();
                         if (!title) return;
-
-                        const row = link.closest('[role="row"], div > div:has(img)');
-                        if (!row) return;
 
                         const artistLinks = Array.from(row.querySelectorAll('a[href*="/artist/"]'));
                         const artist = artistLinks.map(a => a.innerText).join(', ') || "Desconhecido";
