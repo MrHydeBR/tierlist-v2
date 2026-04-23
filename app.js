@@ -67,53 +67,66 @@ async function loadPlaylist(playlistUrl) {
   try {
     container.hidden = false;
     playlistMeta.hidden = true;
-    bar.style.width = '5%';
-    status.textContent = 'Iniciando robô de busca...';
+    bar.style.width = '0%';
+    status.textContent = 'Conectando ao robô de busca...';
     
-    // Simulação de progresso baseada no tempo médio de raspagem
-    const timer1 = setTimeout(() => { if(!container.hidden) { bar.style.width = '25%'; status.textContent = 'Abrindo Spotify e validando link...'; } }, 2000);
-    const timer2 = setTimeout(() => { if(!container.hidden) { bar.style.width = '55%'; status.textContent = 'Extraindo faixas e miniaturas (isso pode levar alguns segundos)...'; } }, 6000);
-    const timer3 = setTimeout(() => { if(!container.hidden) { bar.style.width = '85%'; status.textContent = 'Organizando dados e finalizando...'; } }, 15000);
+    // Reset state for new playlist
+    state.playlist = { id: 'scraped', name: 'Importando Playlist...', owner: 'Spotify', cover: '', count: 0 };
+    state.songs = {};
+    state.tiers = Object.fromEntries(TIERS.map(t => [t.id, []]));
+    state.pool = [];
+    state.filter = null;
+    renderAll();
 
-    const res = await fetch('/api/scrape', {
+    const response = await fetch('/api/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: playlistUrl })
     });
-    
-    // Limpar timers se a resposta chegar antes
-    clearTimeout(timer1); clearTimeout(timer2); clearTimeout(timer3);
 
-    if (!res.ok) {
-      const err = await res.json().catch(()=>({}));
-      throw new Error(err.detail || 'Falha ao processar a playlist.');
+    if (!response.ok) throw new Error('Falha na conexão com o servidor.');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let count = 0;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const track = JSON.parse(line);
+          if (track.error) throw new Error(track.error);
+
+          // Adicionar música individualmente
+          if (!state.songs[track.id]) {
+            state.songs[track.id] = { ...track, style: null };
+            state.pool.push(track.id);
+            count++;
+            
+            // Atualizar UI progressivamente
+            state.playlist.count = count;
+            bar.style.width = Math.min(count, 100) + '%';
+            status.textContent = `Carregando: ${count} músicas encontradas...`;
+            
+            // Atualização visual (debounced ou direta para feedback instantâneo)
+            updatePlaylistMeta();
+            renderPool(); 
+          }
+        } catch (e) { console.error("Erro no chunk:", e); }
+      }
     }
-    
-    const data = await res.json();
-    const tracks = data.tracks || [];
-
-    // Reset state for new playlist
-    state.playlist = {
-      id: data.playlist.id,
-      name: data.playlist.name,
-      owner: data.playlist.owner,
-      cover: data.playlist.cover,
-      count: tracks.length,
-    };
-    state.songs = {};
-    for (const t of tracks) state.songs[t.id] = { ...t, style: null };
-    state.tiers = Object.fromEntries(TIERS.map(t => [t.id, []]));
-    state.pool = tracks.map(t => t.id);
-    state.filter = null;
     
     bar.style.width = '100%';
     status.textContent = 'Carregamento concluído!';
-    
-    updatePlaylistMeta();
     renderAll();
-    toast(`${tracks.length} músicas carregadas com sucesso! 🎵`);
+    toast(`${count} músicas carregadas com sucesso! 🎵`);
     
-    // Esconder barra após um delay para o usuário ver o "Concluído"
     setTimeout(() => { container.hidden = true; }, 1500);
   } catch (e) {
     console.error(e);
