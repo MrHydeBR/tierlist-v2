@@ -47,24 +47,39 @@ def scrape_spotify(url: str):
             
             logger.info("Iniciando scroll dinâmico ultra-veloz...")
             for i in range(150):
-                # Extração em massa via Javascript (MUITO mais rápido)
+                # Extração Hiper-Flexível via Javascript
                 batch = page.evaluate("""() => {
-                    const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
-                    return Array.from(rows).map(row => {
-                        const trackLink = row.querySelector('a[href*="/track/"]');
-                        if (!trackLink) return null;
-                        const href = trackLink.getAttribute('href');
-                        const id = href.split('/track/')[1].split('?')[0];
-                        const title = trackLink.innerText;
-                        const artists = Array.from(row.querySelectorAll('a[href*="/artist/"]')).map(a => a.innerText);
+                    // Busca todos os links de música na página
+                    const trackLinks = Array.from(document.querySelectorAll('a[href*="/track/"]'));
+                    const results = [];
+                    
+                    trackLinks.forEach(link => {
+                        const href = link.getAttribute('href');
+                        const idMatch = href.match(/\/track\/([a-zA-Z0-9]+)/);
+                        if (!idMatch) return;
+                        
+                        const id = idMatch[1];
+                        const title = link.innerText.trim();
+                        if (!title || title.length < 1) return;
+
+                        // Tenta achar o container da linha subindo o DOM
+                        const row = link.closest('[role="row"], div > div:has(img)');
+                        if (!row) return;
+
+                        // Busca artistas e capa dentro desse container
+                        const artistLinks = Array.from(row.querySelectorAll('a[href*="/artist/"]'));
+                        const artist = artistLinks.map(a => a.innerText).join(', ') || "Desconhecido";
+                        
                         const img = row.querySelector('img');
                         let cover = img ? img.getAttribute('src') : "";
                         if (!cover && img) {
                              const srcset = img.getAttribute('srcset');
                              if (srcset) cover = srcset.split(' ')[0];
                         }
-                        return { id, title, artist: artists.join(', '), cover };
-                    }).filter(x => x !== null);
+
+                        results.push({ id, title, artist, cover });
+                    });
+                    return results;
                 }""")
                 
                 # Mesclar resultados
