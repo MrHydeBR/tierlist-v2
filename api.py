@@ -73,15 +73,14 @@ def scrape_spotify_generator(url: str):
                     const trackLinks = Array.from(document.querySelectorAll('a[href*="/track/"]'));
                     const results = [];
                     
-                    // Localiza o título de recomendações para servir de "parede"
-                    const recsHeading = Array.from(document.querySelectorAll('h2')).find(h => 
-                        h.innerText.includes('Recomendado') || 
-                        h.innerText.includes('Recommended') ||
-                        h.innerText.includes('Músicas recomendadas')
-                    );
+                    // Só considera o título de recomendações se ele estiver REALMENTE visível
+                    const recsHeading = Array.from(document.querySelectorAll('h2')).find(h => {
+                        const text = h.innerText;
+                        return (text.includes('Recomendado') || text.includes('Recommended') || text.includes('Músicas recomendadas')) 
+                               && h.offsetHeight > 0;
+                    });
 
                     trackLinks.forEach(link => {
-                        // Se a música estiver DEPOIS do título de recomendações, ignora
                         if (recsHeading && (recsHeading.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING)) {
                             return;
                         }
@@ -124,14 +123,20 @@ def scrape_spotify_generator(url: str):
 
                 # Para se ficar travado ou se o tempo total estourar (2 min)
                 elapsed = time.time() - start_time
-                if stuck_count > 15 or elapsed > 120:
-                    logger.info(f"Finalizando por timeout ou falta de progresso. Tempo: {elapsed:.1f}s")
+                if stuck_count > 30 or elapsed > 120:
                     break
                 
-                # Rolar para baixo usando teclado e JS (mais confiável em servidores)
+                # ROLAGEM UNIVERSAL: Tenta rolar TUDO que for possível na página
                 page.keyboard.press("PageDown")
-                for _ in range(5): page.keyboard.press("ArrowDown")
-                page.evaluate("window.scrollBy(0, 800)")
+                page.evaluate(\"\"\"() => {
+                    window.scrollBy(0, 1000);
+                    // Procura containers internos com scroll
+                    document.querySelectorAll('div').forEach(el => {
+                        if (el.scrollHeight > el.clientHeight) {
+                            el.scrollBy(0, 1000);
+                        }
+                    });
+                }\"\"\")
                 
                 # Se não achou nada, espera um pouco mais (paciência)
                 if not new_found:
