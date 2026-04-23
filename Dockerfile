@@ -1,5 +1,5 @@
-# Usar imagem moderna com Python 3.12+
-FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
+# Usar imagem exata da versão 1.58
+FROM mcr.microsoft.com/playwright/python:v1.58.0-noble
 
 WORKDIR /app
 
