@@ -70,21 +70,12 @@ def scrape_spotify_generator(url: str):
                 if len(tracks_sent) >= 200: break
 
                 batch = page.evaluate("""() => {
-                    const trackLinks = Array.from(document.querySelectorAll('a[href*="/track/"]'));
+                    // Mira Laser: Foca apenas no container principal da playlist
+                    const container = document.querySelector('[data-testid="playlist-tracklist"]') || document.body;
+                    const trackLinks = Array.from(container.querySelectorAll('a[href*="/track/"]'));
                     const results = [];
                     
-                    // Só considera o título de recomendações se ele estiver REALMENTE visível
-                    const recsHeading = Array.from(document.querySelectorAll('h2')).find(h => {
-                        const text = h.innerText;
-                        return (text.includes('Recomendado') || text.includes('Recommended') || text.includes('Músicas recomendadas')) 
-                               && h.offsetHeight > 0;
-                    });
-
                     trackLinks.forEach(link => {
-                        if (recsHeading && (recsHeading.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING)) {
-                            return;
-                        }
-
                         const href = link.getAttribute('href');
                         const idMatch = href.match(/\/track\/([a-zA-Z0-9]+)/);
                         if (!idMatch) return;
