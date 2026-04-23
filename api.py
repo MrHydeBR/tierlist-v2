@@ -47,7 +47,12 @@ def scrape_spotify_generator(url: str):
         page = context.new_page()
         
         try:
-            page.goto(url, wait_until='load', timeout=60000)
+            # Espera até 90 segundos para a página carregar (Render pode ser lento)
+            page.goto(url, wait_until='networkidle', timeout=90000)
+            
+            # Espera explícita por pelo menos um link de música para garantir que carregou
+            page.wait_for_selector('a[href*="/track/"]', timeout=30000)
+            
             page.mouse.click(600, 500)
             time.sleep(1)
 

@@ -89,13 +89,15 @@ async function loadPlaylist(playlistUrl) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let count = 0;
+    let buffer = ''; // Buffer para lidar com linhas cortadas
 
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n');
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Guarda a última linha (que pode estar incompleta) no buffer
 
       for (const line of lines) {
         if (!line.trim()) continue;
@@ -103,18 +105,15 @@ async function loadPlaylist(playlistUrl) {
           const track = JSON.parse(line);
           if (track.error) throw new Error(track.error);
 
-          // Adicionar música individualmente
           if (!state.songs[track.id]) {
             state.songs[track.id] = { ...track, style: null };
             state.pool.push(track.id);
             count++;
             
-            // Atualizar UI progressivamente
             state.playlist.count = count;
             bar.style.width = Math.min(count, 100) + '%';
             status.textContent = `Carregando: ${count} músicas encontradas...`;
             
-            // Atualização visual (debounced ou direta para feedback instantâneo)
             updatePlaylistMeta();
             renderPool(); 
           }
