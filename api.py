@@ -26,10 +26,23 @@ class ScrapeRequest(BaseModel):
 def scrape_spotify(url: str):
     logger.info(f"Iniciando raspagem profunda (v4): {url}")
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, slow_mo=50, args=["--no-sandbox", "--disable-setuid-sandbox"])
+        # Modo ultra-econômico de memória
+        browser = p.chromium.launch(
+            headless=True, 
+            args=[
+                "--no-sandbox", 
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",  # Crucial para Docker/Render
+                "--disable-gpu",
+                "--no-zygote",
+                "--single-process",         # Economiza muita RAM
+                "--disable-accelerated-2d-canvas",
+                "--no-first-run"
+            ]
+        )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 1000}
+            viewport={"width": 1000, "height": 800} # Reduzido para poupar RAM
         )
         page = context.new_page()
         
