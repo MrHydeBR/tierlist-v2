@@ -1,5 +1,5 @@
-# Usar a imagem oficial do Playwright que já vem com TUDO instalado
-FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
+# Usar imagem estável do Playwright
+FROM mcr.microsoft.com/playwright/python:v1.40.0-focal
 
 WORKDIR /app
 
