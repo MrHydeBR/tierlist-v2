@@ -54,8 +54,8 @@ def scrape_spotify_generator(url: str):
             tracks_sent = set()
             stuck_count = 0
             
-            for i in range(150):
-                if len(tracks_sent) >= 100: break
+            for i in range(250):
+                if len(tracks_sent) >= 150: break
 
                 batch = page.evaluate("""() => {
                     const trackLinks = Array.from(document.querySelectorAll('a[href*="/track/"]'));
@@ -88,17 +88,21 @@ def scrape_spotify_generator(url: str):
                         tracks_sent.add(track['id'])
                         new_found = True
                         yield json.dumps(track) + "\n"
-                        if len(tracks_sent) >= 100: break
+                        if len(tracks_sent) >= 150: break
                 
-                if not new_found: stuck_count += 1
-                else: stuck_count = 0
+                if not new_found: 
+                    stuck_count += 1
+                else: 
+                    stuck_count = 0
                 
+                # Critério de parada mais tolerante
                 recs = page.locator('h2:has-text("Recomendado"), h2:has-text("Recommended")').first
-                if (recs.count() and recs.is_visible()) or stuck_count > 15:
+                if (recs.count() and recs.is_visible()) or stuck_count > 25:
                     break
                 
-                page.mouse.wheel(0, 1200)
-                time.sleep(0.5)
+                # Salto menor para garantir o trigger de carregamento do Spotify
+                page.mouse.wheel(0, 800)
+                time.sleep(0.6)
             
             logger.info(f"Streaming finalizado. Total: {len(tracks_sent)}")
             
