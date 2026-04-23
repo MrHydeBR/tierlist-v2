@@ -66,8 +66,8 @@ def scrape_spotify_generator(url: str):
             tracks_sent = set()
             stuck_count = 0
             
-            for i in range(250):
-                if len(tracks_sent) >= 150: break
+            for i in range(400):
+                if len(tracks_sent) >= 200: break
 
                 batch = page.evaluate("""() => {
                     const trackLinks = Array.from(document.querySelectorAll('a[href*="/track/"]'));
@@ -121,9 +121,10 @@ def scrape_spotify_generator(url: str):
                 else: 
                     stuck_count = 0
 
-                # Para se ficar travado ou se o tempo total estourar (2 min)
+                # Para se ficar travado ou se o tempo total estourar (5 min)
                 elapsed = time.time() - start_time
-                if stuck_count > 30 or elapsed > 120:
+                if stuck_count > 50 or elapsed > 300:
+                    logger.info(f"Finalizando. Total: {len(tracks_sent)} | Tempo: {elapsed:.1f}s")
                     break
                 
                 # ROLAGEM UNIVERSAL: Tenta rolar TUDO que for possível na página
