@@ -43,12 +43,11 @@ def scrape_spotify_generator(url: str):
         )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 800, "height": 600}
+            viewport={"width": 1000, "height": 800}
         )
         
-        # Bloquear imagens e outros recursos pesados para economizar MUITA RAM
+        # Criar página com viewport um pouco maior para garantir renderização
         page = context.new_page()
-        page.route("**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
         
         try:
             start_time = time.time()
@@ -131,6 +130,7 @@ def scrape_spotify_generator(url: str):
                 
                 # Rolar para baixo usando teclado e JS (mais confiável em servidores)
                 page.keyboard.press("PageDown")
+                for _ in range(5): page.keyboard.press("ArrowDown")
                 page.evaluate("window.scrollBy(0, 800)")
                 
                 # Se não achou nada, espera um pouco mais (paciência)
