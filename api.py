@@ -37,7 +37,8 @@ def scrape_spotify_generator(url: str):
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--no-zygote",
-                "--single-process"
+                "--single-process",
+                "--disable-blink-features=AutomationControlled"
             ]
         )
         context = browser.new_context(
@@ -47,11 +48,14 @@ def scrape_spotify_generator(url: str):
         page = context.new_page()
         
         try:
-            # Espera até 90 segundos para a página carregar (Render pode ser lento)
-            page.goto(url, wait_until='networkidle', timeout=90000)
+            # Envia um pingo inicial para o frontend saber que estamos vivos
+            yield json.dumps({"status": "connected"}) + "\n"
+
+            # Bypass de detecção de robô
+            page.goto(url, wait_until='load', timeout=60000)
             
-            # Espera explícita por pelo menos um link de música para garantir que carregou
-            page.wait_for_selector('a[href*="/track/"]', timeout=30000)
+            # Espera bruta para garantir que o conteúdo dinâmico apareça
+            time.sleep(5)
             
             page.mouse.click(600, 500)
             time.sleep(1)

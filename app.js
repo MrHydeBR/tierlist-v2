@@ -104,6 +104,11 @@ async function loadPlaylist(playlistUrl) {
         try {
           const track = JSON.parse(line);
           if (track.error) throw new Error(track.error);
+          if (track.status) {
+            console.log("Server status:", track.status);
+            status.textContent = 'Robô conectado! Iniciando busca...';
+            continue;
+          }
 
           if (!state.songs[track.id]) {
             state.songs[track.id] = { ...track, style: null };
