@@ -69,15 +69,30 @@ def scrape_spotify_generator(url: str):
                 batch = page.evaluate("""() => {
                     const trackLinks = Array.from(document.querySelectorAll('a[href*="/track/"]'));
                     const results = [];
+                    
+                    // Localiza o título de recomendações para servir de "parede"
+                    const recsHeading = Array.from(document.querySelectorAll('h2')).find(h => 
+                        h.innerText.includes('Recomendado') || 
+                        h.innerText.includes('Recommended') ||
+                        h.innerText.includes('Músicas recomendadas')
+                    );
+
                     trackLinks.forEach(link => {
+                        // Se a música estiver DEPOIS do título de recomendações, ignora
+                        if (recsHeading && (recsHeading.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+                            return;
+                        }
+
                         const href = link.getAttribute('href');
                         const idMatch = href.match(/\/track\/([a-zA-Z0-9]+)/);
                         if (!idMatch) return;
                         const id = idMatch[1];
                         const title = link.innerText.trim();
                         if (!title) return;
+
                         const row = link.closest('[role="row"], div > div:has(img)');
                         if (!row) return;
+
                         const artistLinks = Array.from(row.querySelectorAll('a[href*="/artist/"]'));
                         const artist = artistLinks.map(a => a.innerText).join(', ') || "Desconhecido";
                         const img = row.querySelector('img');
