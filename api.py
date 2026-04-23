@@ -129,23 +129,22 @@ def scrape_spotify_generator(url: str):
                     logger.info(f"Finalizando. Total: {len(tracks_sent)} | Tempo: {elapsed:.1f}s")
                     break
                 
-                # ROLAGEM UNIVERSAL: Tenta rolar TUDO que for possível na página
-                page.keyboard.press("PageDown")
-                page.evaluate("""() => {
-                    window.scrollBy(0, 1000);
-                    // Procura containers internos com scroll
-                    document.querySelectorAll('div').forEach(el => {
-                        if (el.scrollHeight > el.clientHeight) {
-                            el.scrollBy(0, 1000);
-                        }
-                    });
-                }""")
+                # Tenta rolar para a última música encontrada para forçar o carregamento das próximas
+                try:
+                    last_track = page.locator('a[href*="/track/"]').last
+                    if last_track.count():
+                        last_track.scroll_into_view_if_needed()
+                except: pass
                 
-                # Se não achou nada, espera um pouco mais (paciência)
+                # Reforço com teclado e JS
+                page.keyboard.press("PageDown")
+                page.evaluate("window.scrollBy(0, 500)")
+                
+                # Se não achou nada novo, espera mais (paciência)
                 if not new_found:
-                    time.sleep(1.0)
+                    time.sleep(1.2)
                 else:
-                    time.sleep(0.5)
+                    time.sleep(0.4)
             
             logger.info(f"Streaming finalizado. Total: {len(tracks_sent)}")
             
