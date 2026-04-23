@@ -103,15 +103,21 @@ def scrape_spotify_generator(url: str):
                     stuck_count += 1
                 else: 
                     stuck_count = 0
-                
+
                 # Critério de parada mais tolerante
                 recs = page.locator('h2:has-text("Recomendado"), h2:has-text("Recommended")').first
-                if (recs.count() and recs.is_visible()) or stuck_count > 25:
+                if (recs.count() and recs.is_visible()) or stuck_count > 35:
                     break
                 
-                # Salto menor para garantir o trigger de carregamento do Spotify
-                page.mouse.wheel(0, 800)
-                time.sleep(0.6)
+                # Rolar para baixo usando teclado e JS (mais confiável em servidores)
+                page.keyboard.press("PageDown")
+                page.evaluate("window.scrollBy(0, 800)")
+                
+                # Se não achou nada, espera um pouco mais (paciência)
+                if not new_found:
+                    time.sleep(1.0)
+                else:
+                    time.sleep(0.5)
             
             logger.info(f"Streaming finalizado. Total: {len(tracks_sent)}")
             
