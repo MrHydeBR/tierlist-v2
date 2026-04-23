@@ -1,5 +1,5 @@
-# Usar imagem estável do Playwright
-FROM mcr.microsoft.com/playwright/python:v1.40.0-focal
+# Usar imagem moderna com Python 3.12+
+FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
 
 WORKDIR /app
 
