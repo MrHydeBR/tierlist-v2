@@ -6,6 +6,6 @@ echo "--- Instalando dependências do Python ---"
 pip install -r requirements.txt
 
 echo "--- Instalando navegadores do Playwright ---"
-python -m playwright install --with-deps chromium
+python -m playwright install chromium
 
 echo "--- Build finalizado com sucesso ---"
