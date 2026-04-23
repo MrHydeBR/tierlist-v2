@@ -128,7 +128,7 @@ def scrape_spotify_generator(url: str):
                 
                 # ROLAGEM UNIVERSAL: Tenta rolar TUDO que for possível na página
                 page.keyboard.press("PageDown")
-                page.evaluate(\"\"\"() => {
+                page.evaluate("""() => {
                     window.scrollBy(0, 1000);
                     // Procura containers internos com scroll
                     document.querySelectorAll('div').forEach(el => {
@@ -136,7 +136,7 @@ def scrape_spotify_generator(url: str):
                             el.scrollBy(0, 1000);
                         }
                     });
-                }\"\"\")
+                }""")
                 
                 # Se não achou nada, espera um pouco mais (paciência)
                 if not new_found:
