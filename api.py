@@ -55,13 +55,22 @@ def scrape_spotify_generator(url: str):
             yield json.dumps({"status": "connected"}) + "\n"
 
             # Bypass de detecção de robô
-            page.goto(url, wait_until='load', timeout=60000)
+            page.goto(url, wait_until='domcontentloaded', timeout=60000)
+            yield json.dumps({"status": "loading_page"}) + "\n"
             
-            # Espera bruta para garantir que o conteúdo dinâmico apareça
-            time.sleep(5)
+            # Espera robusta para o Spotify "acordar"
+            time.sleep(10)
             
+            # Tenta aceitar cookies se o banner aparecer
+            try:
+                cookie_btn = page.locator('button:has-text("Aceitar"), button:has-text("Accept"), #onetrust-accept-btn-handler').first
+                if cookie_btn.is_visible():
+                    cookie_btn.click()
+                    time.sleep(2)
+            except: pass
+
             page.mouse.click(600, 500)
-            time.sleep(1)
+            yield json.dumps({"status": "searching"}) + "\n"
 
             tracks_sent = set()
             stuck_count = 0
@@ -71,7 +80,6 @@ def scrape_spotify_generator(url: str):
 
                 batch = page.evaluate("""() => {
                     const results = [];
-                    // Busca todos os links de música
                     const trackLinks = Array.from(document.querySelectorAll('a[href*="/track/"]'));
                     
                     trackLinks.forEach(link => {
@@ -80,14 +88,13 @@ def scrape_spotify_generator(url: str):
                         if (!idMatch) return;
                         const id = idMatch[1];
                         
-                        // Busca o container da linha (o row do Spotify)
                         const row = link.closest('[role="row"], [data-testid="tracklist-row"], div:has(img)');
                         if (!row) return;
 
-                        // REGRA DE OURO: Só aceita se tiver o número do índice (#)
-                        // Isso filtra as recomendações automaticamente!
-                        const hasIndex = !!row.querySelector('[data-testid="tracklist-row-index-column"], .index-column, span[dir="auto"]');
-                        if (!hasIndex) return;
+                        // Busca qualquer número na linha que pareça um índice
+                        const text = row.innerText;
+                        const hasNumber = /\\d+/.test(text.split('\\n')[0]) || /\\d+/.test(text.slice(0, 10));
+                        if (!hasNumber) return;
 
                         const title = link.innerText.trim();
                         if (!title) return;
@@ -96,10 +103,6 @@ def scrape_spotify_generator(url: str):
                         const artist = artistLinks.map(a => a.innerText).join(', ') || "Desconhecido";
                         const img = row.querySelector('img');
                         let cover = img ? img.getAttribute('src') : "";
-                        if (!cover && img) {
-                             const srcset = img.getAttribute('srcset');
-                             if (srcset) cover = srcset.split(' ')[0];
-                        }
                         results.push({ id, title, artist, cover });
                     });
                     return results;

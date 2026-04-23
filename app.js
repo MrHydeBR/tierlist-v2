@@ -106,7 +106,8 @@ async function loadPlaylist(playlistUrl) {
           if (track.error) throw new Error(track.error);
           if (track.status) {
             console.log("Server status:", track.status);
-            status.textContent = 'Robô conectado! Iniciando busca...';
+            if (track.status === 'loading_page') status.textContent = 'Spotify aberto! Carregando página...';
+            if (track.status === 'searching') status.textContent = 'Pronto! Começando a buscar as músicas...';
             continue;
           }
 
