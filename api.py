@@ -76,36 +76,32 @@ def scrape_spotify_generator(url: str, access_token: str):
     # --- TENTATIVA 1: API OFICIAL (Estável e com Capas) ---
     try:
         yield json.dumps({"status": "connected", "method": "official"}) + "\n"
-        logger.info(f"Processando playlist {playlist_id} via API Oficial...")
-        
-        # Diagnóstico de chaves (ajuda a descobrir se o .env foi lido)
-        if CLIENT_ID and CLIENT_SECRET:
-            logger.info(f"API Oficial: Chaves configuradas com sucesso (ID: {CLIENT_ID[:5]}...)")
-        else:
-            logger.warning("ERRO: SPOTIFY_CLIENT_ID ou SPOTIFY_CLIENT_SECRET ausentes no ambiente!")
         
         sp = None
-        # Tenta usar o token do usuário se fornecido
-        if access_token and access_token.strip():
+        # 1. Tenta usar o token do usuário (PKCE do frontend)
+        if access_token and len(access_token) > 20:
             sp = spotipy.Spotify(auth=access_token)
             try:
                 sp.me() # Teste rápido de token
-            except:
-                logger.warning("Token de usuário inválido ou expirado. Tentando Client Credentials...")
+            except Exception as e:
+                logger.warning(f"Token de usuário falhou ({e}). Tentando Client Credentials...")
                 sp = None
-
-        # Fallback para Client Credentials (estável para playlists públicas)
+        
+        # 2. Fallback para Client Credentials (ID/Secret do Render)
         if sp is None and CLIENT_ID and CLIENT_SECRET:
             try:
                 from spotipy.oauth2 import SpotifyClientCredentials
                 auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
                 sp = spotipy.Spotify(auth_manager=auth_manager)
-                logger.info("Autenticação Client Credentials configurada.")
+                # Força a obtenção do token para validar as chaves agora
+                auth_manager.get_access_token(as_dict=False)
+                logger.info("Autenticação Client Credentials confirmada.")
             except Exception as auth_err:
-                logger.error(f"Falha ao configurar Client Credentials: {auth_err}")
+                logger.error(f"Falha no Client Credentials: {auth_err}")
+                sp = None
 
         if sp:
-            # Pega o total de músicas primeiro
+            logger.info(f"Iniciando busca oficial para {playlist_id}")
             pl_info = sp.playlist(playlist_id, fields="tracks.total")
             total = pl_info.get('tracks', {}).get('total', 0) if pl_info else 0
             yield json.dumps({"status": "searching", "total": total}) + "\n"
@@ -123,26 +119,20 @@ def scrape_spotify_generator(url: str, access_token: str):
                         yield json.dumps(data) + "\n"
                         time.sleep(0.01)
                 
-                # Spotify Pagination: Se retornou menos que o limit, acabou
                 if len(items) < limit or not page.get('next'): break
                 offset += limit
             return # Sucesso com API oficial
         else:
-            logger.warning("Nenhuma autenticação (usuário ou Client Credentials) foi bem-sucedida. Caindo para o Scraper.")
+            raise Exception("Credenciais inválidas ou ausentes para API Oficial")
 
     except Exception as e:
-        logger.exception("API Oficial falhou inesperadamente") 
+        logger.exception(f"API Oficial falhou: {e}") 
         yield json.dumps({"status": "fallback", "reason": str(e), "keys_found": bool(CLIENT_ID)}) + "\n"
 
     # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) ---
     try:
-        import asyncio
-        # O scraper é assíncrono, então usamos um helper para rodar sincronamente
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        playlist_data = loop.run_until_complete(get_playlist(playlist_id))
-        loop.close()
-        
+        # Usamos httpx de forma síncrona para evitar problemas de loop no Render
+        playlist_data = get_playlist_sync(playlist_id)
         for track in playlist_data.get("tracks", []):
             yield json.dumps(track) + "\n"
     except Exception as e:
@@ -197,17 +187,13 @@ def _parse_track(item: dict) -> dict | None:
             
     return {"id": track_id, "title": title, "artist": artist, "cover": cover or ""}
 
-@app.get("/api/playlist/{playlist_id}")
-async def get_playlist(playlist_id: str):
+def get_playlist_sync(playlist_id: str):
+    """Versão síncrona do scraper para estabilidade no stream"""
     url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
-            res = await client.get(url, headers=_EMBED_HEADERS)
-    except Exception as e:
-        raise HTTPException(502, f"Falha ao buscar embed do Spotify: {e}")
-
+    res = httpx.get(url, headers=_EMBED_HEADERS, follow_redirects=True, timeout=20.0)
+    
     if res.status_code != 200:
-        raise HTTPException(res.status_code, f"Spotify embed retornou {res.status_code}")
+        raise Exception(f"Spotify embed retornou {res.status_code}")
 
     soup = BeautifulSoup(res.text, "html.parser")
     # Spotify now uses __NEXT_DATA__ for the JSON payload
