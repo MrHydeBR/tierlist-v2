@@ -97,9 +97,10 @@ def scrape_spotify_generator(url: str, access_token: str):
                 sp = None
 
         if sp:
-            # Puxa o total e os itens
-            pl_info = sp.playlist(playlist_id, fields="name,tracks.total")
-            total = pl_info.get('tracks', {}).get('total', 0)
+            logger.info(f"Processando playlist {playlist_id} via API Oficial")
+            # Puxa informações básicas sem filtros restritivos de fields
+            pl_data = sp.playlist(playlist_id)
+            total = pl_data.get('tracks', {}).get('total', 0)
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
             offset = 0
@@ -115,15 +116,15 @@ def scrape_spotify_generator(url: str, access_token: str):
                         yield json.dumps(data) + "\n"
                         time.sleep(0.01)
                 
-                # Se não há 'next' ou processamos tudo, para
-                if not page.get('next') or len(items) < limit: break
+                # Spotify Pagination: verifica se há próxima página
+                if not page.get('next'): break
                 offset += limit
-            return # Sucesso total
+            return 
         else:
-            yield json.dumps({"status": "fallback", "reason": "Nenhuma autenticação oficial foi bem-sucedida.", "keys_found": bool(CLIENT_ID)}) + "\n"
+            raise Exception("Credenciais ausentes")
 
     except Exception as e:
-        logger.exception(f"API Oficial falhou inesperadamente: {e}")
+        logger.warning(f"API Oficial falhou ({e}). Usando Scraper.")
         yield json.dumps({"status": "fallback", "reason": str(e), "keys_found": bool(CLIENT_ID)}) + "\n"
     
     # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) - Sempre executado se a API oficial não retornar ---
@@ -135,56 +136,12 @@ def scrape_spotify_generator(url: str, access_token: str):
         logger.error(f"Scraper de Embed falhou: {e}")
         yield json.dumps({"error": f"Não foi possível carregar a playlist via scraper: {str(e)}"}) + "\n"
 
-def get_playlist_sync(playlist_id: str):
-    """Extração via scraper (embed) caso a API oficial falhe ou não tenha chaves."""
-    url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
-    res = httpx.get(url, headers=_EMBED_HEADERS, follow_redirects=True, timeout=20.0)
-    
-    if res.status_code != 200:
-        raise Exception(f"Spotify retornou status {res.status_code}")
-
-    soup = BeautifulSoup(res.text, "html.parser")
-    script = soup.find("script", {"id": "resource"}) or soup.find("script", {"id": "__NEXT_DATA__"})
-    if not script or not script.string:
-        raise Exception("Dados da playlist não encontrados no HTML")
-
-    data = json.loads(script.string)
-    if "props" in data: # Estrutura moderna __NEXT_DATA__
-        entity = data.get("props", {}).get("pageProps", {}).get("state", {}).get("data", {}).get("entity", {})
-        track_list = entity.get("trackList") or entity.get("tracks", {}).get("items") or []
-    else:
-        track_list = data.get("trackList") or []
-
-    return {"tracks": [t for item in track_list if (t := _parse_track(item))]}
-
 @app.post("/api/scrape")
 def api_scrape(req: ScrapeRequest):
     return StreamingResponse(
         scrape_spotify_generator(req.url, req.access_token),
         media_type="application/x-ndjson",
     )
-
-def get_playlist_sync(playlist_id: str):
-    """Extração via scraper (embed) caso a API oficial falhe ou não tenha chaves."""
-    url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
-    res = httpx.get(url, headers=_EMBED_HEADERS, follow_redirects=True, timeout=20.0)
-    
-    if res.status_code != 200:
-        raise Exception(f"Spotify retornou status {res.status_code}")
-
-    soup = BeautifulSoup(res.text, "html.parser")
-    script = soup.find("script", {"id": "resource"}) or soup.find("script", {"id": "__NEXT_DATA__"})
-    if not script or not script.string:
-        raise Exception("Dados da playlist não encontrados no HTML")
-
-    data = json.loads(script.string)
-    if "props" in data: # Estrutura moderna __NEXT_DATA__
-        entity = data.get("props", {}).get("pageProps", {}).get("state", {}).get("data", {}).get("entity", {})
-        track_list = entity.get("trackList") or entity.get("tracks", {}).get("items") or []
-    else:
-        track_list = data.get("trackList") or []
-
-    return {"tracks": [t for item in track_list if (t := _parse_track(item))]}
 
 
 _EMBED_HEADERS = {
