@@ -1,18 +1,23 @@
+import os
 import time
 import logging
-from typing import Optional
-from fastapi import FastAPI, HTTPException
+import json
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from playwright.sync_api import sync_playwright
+from fastapi.responses import StreamingResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
+CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
+
 app = FastAPI()
 
-# Add CORS middleware to prevent "Failed to Fetch" due to origin mismatches
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,142 +28,89 @@ app.add_middleware(
 class ScrapeRequest(BaseModel):
     url: str
 
-import json
-from fastapi.responses import StreamingResponse
+def extract_playlist_id(url: str) -> str:
+    # Suporta links completos ou apenas o ID
+    if "playlist/" in url:
+        return url.split("playlist/")[1].split("?")[0]
+    return url
 
 def scrape_spotify_generator(url: str):
-    logger.info(f"Iniciando streaming de raspagem: {url}")
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True, 
-            args=[
-                "--no-sandbox", 
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--no-zygote",
-                "--single-process",
-                "--disable-blink-features=AutomationControlled"
-            ]
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1000, "height": 800}
-        )
+    try:
+        yield json.dumps({"status": "connected"}) + "\n"
         
-        # Criar página com viewport um pouco maior para garantir renderização
-        page = context.new_page()
+        playlist_id = extract_playlist_id(url)
+        logger.info(f"Tentando acessar playlist: {playlist_id}")
         
+        # Conecta na API oficial
+        auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
+        sp = spotipy.Spotify(auth_manager=auth_manager)
+        
+        # Tenta pegar informações básicas primeiro
         try:
-            start_time = time.time()
-            # Envia um pingo inicial para o frontend saber que estamos vivos
-            yield json.dumps({"status": "connected"}) + "\n"
-
-            # Bypass de detecção de robô
-            page.goto(url, wait_until='domcontentloaded', timeout=60000)
-            yield json.dumps({"status": "loading_page"}) + "\n"
+            pl_info = sp.playlist(playlist_id)
+            logger.info(f"Playlist encontrada: {pl_info['name']} ({pl_info['tracks']['total']} músicas)")
+        except Exception as e_pl:
+            logger.error(f"Erro ao validar playlist: {e_pl}")
+            yield json.dumps({"error": f"Playlist não encontrada ou privada: {str(e_pl)}"}) + "\n"
+            return
+        
+        yield json.dumps({"status": "searching"}) + "\n"
+        
+        # Busca os itens da playlist
+        results = sp.playlist_items(playlist_id)
+        tracks = results.get('items', [])
+        
+        logger.info(f"Lote inicial: {len(tracks)} músicas encontradas.")
+        
+        def process_item(item):
+            if not item: return None
+            track = item.get('track')
+            if not track: return None
             
-            # Espera robusta para o Spotify "acordar"
-            time.sleep(10)
+            # Garante que temos as informações básicas
+            track_id = track.get('id') or f"temp-{time.time()}"
+            title = track.get('name') or "Sem título"
+            artist = ", ".join([a['name'] for a in track.get('artists', [])]) or "Desconhecido"
             
-            # Tenta aceitar cookies se o banner aparecer
-            try:
-                cookie_btn = page.locator('button:has-text("Aceitar"), button:has-text("Accept"), #onetrust-accept-btn-handler').first
-                if cookie_btn.is_visible():
-                    cookie_btn.click()
-                    time.sleep(2)
-            except: pass
+            cover = ""
+            if track.get('album') and track['album'].get('images'):
+                cover = track['album']['images'][0]['url']
 
-            # Clica no topo (área neutra) para dar foco sem clicar em músicas
-            page.mouse.click(500, 150)
-            yield json.dumps({"status": "searching"}) + "\n"
-            
-            # Dá um "pulo" pro fim da página para acordar o lazy-load
-            page.keyboard.press("End")
-            time.sleep(2)
-            page.keyboard.press("Home")
-            time.sleep(1)
+            return {
+                "id": track_id,
+                "title": title,
+                "artist": artist,
+                "cover": cover
+            }
 
-            tracks_sent = set()
-            stuck_count = 0
-            
-            for i in range(400):
-                if len(tracks_sent) >= 200: break
+        # Envia as primeiras músicas
+        sent_count = 0
+        for item in tracks:
+            data = process_item(item)
+            if data:
+                yield json.dumps(data) + "\n"
+                sent_count += 1
+                time.sleep(0.02)
+        
+        logger.info(f"Enviadas {sent_count} músicas iniciais.")
 
-                batch = page.evaluate("""() => {
-                    const results = [];
-                    const trackLinks = Array.from(document.querySelectorAll('a[href*="/track/"]'));
-                    
-                    trackLinks.forEach(link => {
-                        const href = link.getAttribute('href');
-                        const idMatch = href.match(/\/track\/([a-zA-Z0-9]+)/);
-                        if (!idMatch) return;
-                        const id = idMatch[1];
-                        
-                        const row = link.closest('[role="row"], [data-testid="tracklist-row"], div:has(img)');
-                        if (!row) return;
-
-                        const title = link.innerText.trim();
-                        if (!title) return;
-
-                        const artistLinks = Array.from(row.querySelectorAll('a[href*="/artist/"]'));
-                        const artist = artistLinks.map(a => a.innerText).join(', ') || "Desconhecido";
-                        const img = row.querySelector('img');
-                        let cover = img ? img.getAttribute('src') : "";
-                        results.push({ id, title, artist, cover });
-                    });
-                    return results;
-                }""")
-                
-                new_found = False
-                for track in batch:
-                    if track['id'] not in tracks_sent:
-                        tracks_sent.add(track['id'])
-                        new_found = True
-                        yield json.dumps(track) + "\n"
-                        if len(tracks_sent) >= 150: break
-                
-                if not new_found: 
-                    stuck_count += 1
-                else: 
-                    stuck_count = 0
-
-                # Para se ficar travado ou se o tempo total estourar (5 min)
-                elapsed = time.time() - start_time
-                if stuck_count > 50 or elapsed > 300:
-                    logger.info(f"Finalizando. Total: {len(tracks_sent)} | Tempo: {elapsed:.1f}s")
-                    break
-                
-                # Tenta rolar para a última música encontrada para forçar o carregamento das próximas
-                try:
-                    last_track = page.locator('a[href*="/track/"]').last
-                    if last_track.count():
-                        last_track.scroll_into_view_if_needed()
-                except: pass
-                
-                # Reforço com teclado e JS
-                page.keyboard.press("PageDown")
-                page.evaluate("window.scrollBy(0, 500)")
-                
-                # Se não achou nada novo, espera mais (paciência)
-                if not new_found:
-                    time.sleep(1.2)
-                else:
-                    time.sleep(0.4)
-            
-            logger.info(f"Streaming finalizado. Total: {len(tracks_sent)}")
-            
-        except Exception as e:
-            logger.error(f"Erro no streaming: {e}")
-            yield json.dumps({"error": str(e)}) + "\n"
-        finally:
-            browser.close()
+        # Continua buscando se houver mais páginas
+        while results.get('next'):
+            results = sp.next(results)
+            for item in results.get('items', []):
+                data = process_item(item)
+                if data:
+                    yield json.dumps(data) + "\n"
+                    sent_count += 1
+        
+        logger.info(f"Total final enviado: {sent_count}")
+        
+    except Exception as e:
+        logger.error(f"Erro na API Spotify: {e}")
+        yield json.dumps({"error": str(e)}) + "\n"
 
 @app.post("/api/scrape")
 def api_scrape(req: ScrapeRequest):
-    if "open.spotify.com/playlist/" not in req.url:
-        raise HTTPException(status_code=400, detail="URL inválida.")
-    
     return StreamingResponse(scrape_spotify_generator(req.url), media_type="application/x-ndjson")
 
 app.mount("/", StaticFiles(directory=".", html=True), name="static")

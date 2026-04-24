@@ -1,14 +1,10 @@
-# Usar imagem exata da versão 1.58
-FROM mcr.microsoft.com/playwright/python:v1.58.0-noble
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copiar dependências e instalar
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar o restante do código
 COPY . .
 
-# Comando para rodar a aplicação
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "10000"]
