@@ -448,8 +448,9 @@ function addSongToContainer(track, container) {
   img.loading = 'lazy';
   img.alt = escapeHtml(track.title);
 
-  // REGRA DE OURO: crossOrigin apenas para imagens externas para não quebrar o placeholder Data URI
-  if (track.cover && !track.cover.startsWith('data:')) {
+  // REGRA DE OURO: crossOrigin antes do src para evitar erro de Canvas sujo no PNG
+  // Aplica crossorigin apenas para URLs externas (Spotify), não para o SVG embutido
+  if (track.cover && track.cover.startsWith('http')) {
     img.setAttribute('crossorigin', 'anonymous');
   }
   img.src = track.cover || placeholder;

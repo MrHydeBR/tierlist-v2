@@ -160,16 +160,17 @@ def scrape_spotify_generator(url: str, access_token: str):
 
         if sp:
             logger.info(f"Iniciando busca oficial para {playlist_id}")
-            # Pega o total de músicas
-            pl_info = sp.playlist(playlist_id, fields="tracks.total,name")
+            # Pega informações básicas da playlist
+            pl_info = sp.playlist(playlist_id)
             total = pl_info.get('tracks', {}).get('total', 0) if pl_info else 0
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
             offset = 0
             limit = 100
             while True:
-                # Solução para o 403: Especificamos apenas os campos de TRACK, ignorando episódios
-                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, fields="items(track(id,name,artists,album(images.url))),next")
+                # Solução definitiva para o 403: Forçamos apenas 'track' e removemos o filtro fields 
+                # que estava conflitando com a estrutura de episódios injetada pelo spotipy
+                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, additional_types=['track'])
                 items = page.get('items', [])
                 if not items: break
                 
@@ -179,7 +180,8 @@ def scrape_spotify_generator(url: str, access_token: str):
                         yield json.dumps(data) + "\n"
                         time.sleep(0.01)
                 
-                if not page.get('next') or len(items) < limit: break
+                # Paginação oficial do Spotify
+                if not page.get('next'): break
                 offset += limit # Incrementa o offset para a próxima página
             return
         else:
