@@ -109,7 +109,7 @@ def scrape_spotify_generator(url: str, access_token: str):
             offset = 0
             limit = 100
             while True:
-                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, additional_types=['track'])
+                page = sp.playlist_items(playlist_id, limit=limit, offset=offset) # additional_types is not needed here
                 items = page.get('items', [])
                 if not items: break
                 
@@ -119,25 +119,25 @@ def scrape_spotify_generator(url: str, access_token: str):
                         yield json.dumps(data) + "\n"
                         time.sleep(0.01)
                 
-                if len(items) < limit or not page.get('next'): break
+                if not page.get('next'): break # Se não há mais páginas, sai do loop
                 offset += limit
             return # Sucesso com API oficial
         else:
-            raise Exception("Credenciais inválidas ou ausentes para API Oficial")
+            logger.warning("Nenhuma autenticação oficial (usuário ou Client Credentials) foi bem-sucedida. Caindo para o Scraper.")
+            yield json.dumps({"status": "fallback", "reason": "Nenhuma autenticação oficial foi bem-sucedida.", "keys_found": bool(CLIENT_ID)}) + "\n"
 
     except Exception as e:
-        logger.exception(f"API Oficial falhou: {e}") 
+        logger.exception(f"API Oficial falhou inesperadamente: {e}") 
         yield json.dumps({"status": "fallback", "reason": str(e), "keys_found": bool(CLIENT_ID)}) + "\n"
-
-    # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) ---
+    
+    # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) - Sempre executado se a API oficial não retornar ---
     try:
-        # Usamos httpx de forma síncrona para evitar problemas de loop no Render
-        playlist_data = get_playlist_sync(playlist_id)
+        playlist_data = get_playlist_sync(playlist_id) # get_playlist_sync é síncrono
         for track in playlist_data.get("tracks", []):
             yield json.dumps(track) + "\n"
     except Exception as e:
-        logger.error(f"Fallback falhou: {e}")
-        yield json.dumps({"error": f"Não foi possível carregar a playlist: {str(e)}"}) + "\n"
+        logger.error(f"Scraper de Embed falhou: {e}")
+        yield json.dumps({"error": f"Não foi possível carregar a playlist via scraper: {str(e)}"}) + "\n"
 
 @app.post("/api/scrape")
 def api_scrape(req: ScrapeRequest):
@@ -145,6 +145,7 @@ def api_scrape(req: ScrapeRequest):
         scrape_spotify_generator(req.url, req.access_token),
         media_type="application/x-ndjson",
     )
+
 
 _EMBED_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -174,7 +175,7 @@ def _parse_track(item: dict) -> dict | None:
         if not img_data: continue
         
         if field == "album" and isinstance(img_data, dict):
-            img_data = img_data.get("images", [])
+            img_data = img_data.get("images", []) # Tenta buscar imagens dentro do objeto 'album'
 
         if isinstance(img_data, list) and len(img_data) > 0:
             cover = img_data[0].get("url") or img_data[0].get("sources", [{}])[0].get("url")
@@ -186,58 +187,4 @@ def _parse_track(item: dict) -> dict | None:
         if imgs: cover = imgs[0].get("url")
             
     return {"id": track_id, "title": title, "artist": artist, "cover": cover or ""}
-
-def get_playlist_sync(playlist_id: str):
-    """Versão síncrona do scraper para estabilidade no stream"""
-    url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
-    res = httpx.get(url, headers=_EMBED_HEADERS, follow_redirects=True, timeout=20.0)
-    
-    if res.status_code != 200:
-        raise Exception(f"Spotify embed retornou {res.status_code}")
-
-    soup = BeautifulSoup(res.text, "html.parser")
-    # Spotify now uses __NEXT_DATA__ for the JSON payload
-    script = soup.find("script", {"id": "resource"}) or soup.find("script", {"id": "__NEXT_DATA__"})
-
-    if not script or not script.string:
-        logger.warning("Script de dados não encontrado. HTML preview: %s", res.text[:3000])
-        raise HTTPException(404, "Dados da playlist não encontrados no embed do Spotify.")
-
-    try:
-        data = json.loads(script.string)
-    except json.JSONDecodeError as e:
-        raise HTTPException(500, f"Erro ao parsear JSON do embed: {e}")
-
-    # Try different possible locations for the track list
-    track_list = None
-    playlist_name = ""
-
-    if isinstance(data, dict):
-        # 1. Newest structure (__NEXT_DATA__)
-        state = data.get("props", {}).get("pageProps", {}).get("state", {})
-        entity = state.get("data", {}).get("entity", {})
-        if entity:
-            track_list = entity.get("trackList")
-            playlist_name = entity.get("name") or entity.get("title") or ""
-        
-        # 2. Previous structure (direct trackList)
-        if track_list is None:
-            track_list = data.get("trackList")
-            playlist_name = data.get("name") or playlist_name
-            
-        # 3. Alternative structure (data.entity)
-        if track_list is None:
-            entity = data.get("data", {}).get("entity", {})
-            track_list = entity.get("trackList") or entity.get("tracks", {}).get("items")
-            playlist_name = entity.get("name") or playlist_name
-
-    if track_list is None:
-        logger.warning("Lista de músicas não encontrada. Estrutura: %s", json.dumps(data)[:2000])
-        raise HTTPException(404, "Lista de músicas não encontrada nos dados do embed.")
-
-    tracks = [t for item in track_list if (t := _parse_track(item))]
-    logger.info("Playlist '%s': %d músicas extraídas", playlist_name, len(tracks))
-
-    return {"name": playlist_name, "tracks": tracks}
-
 app.mount("/", StaticFiles(directory=".", html=True), name="static")

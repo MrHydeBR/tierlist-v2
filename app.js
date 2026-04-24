@@ -347,31 +347,20 @@ async function loadPlaylist(playlistUrl) {
     const playlistId = extractPlaylistId(playlistUrl);
     const token = await getToken();
 
-    // Sempre tentamos a API Oficial primeiro (via Backend com Client Secret)
-    // Isso resolve o erro 403 e permite pegar 100+ músicas
-    console.log('Iniciando importação via API Oficial...');
-    let res = await fetch('/api/scrape', {
+    console.log('Iniciando importação via Backend (API Oficial com fallback para Scraper)...');
+    const res = await fetch('/api/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: playlistUrl, access_token: token || '' }),
     });
 
-    if (!res.ok) {
-      console.warn('API Oficial falhou, tentando Scraper de emergência...');
-      res = await fetch(`/api/playlist/${playlistId}`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `Erro ${res.status}`);
-      }
-
-      // Processamento de JSON único (Scraper fallback)
-      const data = await res.json();
-      const tracks = data.tracks || [];
-      processTracks(tracks);
-    } else {
-      // Processamento de Stream (NDJSON - API Oficial)
-      await processStream(res);
+    if (!res.ok) { // Isso só deve acontecer para erros de rede/servidor, não para falhas da API Spotify
+      const errorBody = await res.json().catch(() => ({}));
+      throw new Error(errorBody.detail || `Erro de rede/servidor: ${res.status}`);
     }
+
+    // Processamento de Stream (NDJSON - Backend decide se é API Oficial ou Scraper)
+    await processStream(res);
 
     bar.style.width = '100%';
     status.textContent = 'Pronto! Músicas importadas.';
@@ -459,7 +448,7 @@ function addSongToContainer(track, container) {
   img.alt = escapeHtml(track.title);
   img.loading = 'lazy';
   // Configuração crítica para CORS e html2canvas (PNG Export)
-  img.crossOrigin = "anonymous";
+  img.crossOrigin = "anonymous"; // Deve ser definido antes de setar o src
   img.src = track.cover || placeholder;
 
   // Fallback se a imagem do Spotify falhar ou for bloqueada
