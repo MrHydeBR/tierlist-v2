@@ -365,14 +365,16 @@ async function loadPlaylist(playlistUrl) {
 
           const page = await spRes.json();
           const tracks = page.items.map(it => {
-            const t = it.track;
+            // Tenta pegar de 'track' ou 'item' (mudança recente da API)
+            const t = it.track || it.item;
+            if (!t) return null;
             return {
               id: t.id || `t-${Math.random()}`,
               title: t.name,
               artist: t.artists.map(a => a.name).join(', '),
-              cover: t.album.images[0]?.url || ''
+              cover: t.album?.images[0]?.url || ''
             };
-          });
+          }).filter(Boolean);
 
           processTracks(tracks);
           allTracks = allTracks.concat(tracks);
