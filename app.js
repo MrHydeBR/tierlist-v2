@@ -353,8 +353,8 @@ async function loadPlaylist(playlistUrl) {
         console.log('Tentando busca direta via Navegador (Token de Usuário)...');
         status.textContent = 'Acessando Spotify diretamente...';
 
-        // Usamos o endpoint /tracks que é mais estável no navegador
-        let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50`;
+        // Simplificamos a URL direta para evitar filtros que causem 403
+        let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&fields=items(track(id,name,artists,album(images))),next`;
         let allTracks = [];
 
         while (nextUrl) {
@@ -494,8 +494,8 @@ function addSongToContainer(track, container) {
   card.dataset.id = track.id;
 
   const img = document.createElement('img');
-  // Placeholder SVG embutido de alta compatibilidade
-  const placeholder = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23333"%3E%3Crect width="24" height="24"/%3E%3Cpath d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="%23666"/%3E%3C/svg%3E';
+  // Placeholder SVG simplificado para evitar problemas de parsing
+  const placeholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23333"%3E%3Crect width="24" height="24"/%3E%3Cpath d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="%23666"/%3E%3C/svg%3E';
 
   img.loading = 'lazy';
   img.alt = escapeHtml(track.title);

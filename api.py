@@ -142,16 +142,16 @@ def scrape_spotify_generator(url: str, access_token: str):
 
         if sp:
             logger.info(f"Backend: Iniciando busca oficial para {playlist_id}")
-            # Solução definitiva para o 403: Forçamos apenas 'track' em todas as chamadas
-            # e removemos filtros de campos que podem causar conflito de permissão.
-            pl_data = sp.playlist_items(playlist_id, fields="total", limit=1, additional_types=['track'])
-            total = pl_data.get('total', 0)
+            # Pega informações da playlist sem filtros complexos
+            pl_info = sp.playlist(playlist_id)
+            total = pl_info.get('tracks', {}).get('total', 0) if pl_info else 0
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
             offset = 0
             limit = 100
             while True:
-                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, additional_types=['track'])
+                # Forçamos APENAS tracks. Se o spotipy estiver injetando 'episode', o 403 acontece.
+                page = sp.playlist_tracks(playlist_id, limit=limit, offset=offset)
                 items = page.get('items', [])
                 if not items: break
                 
@@ -161,7 +161,7 @@ def scrape_spotify_generator(url: str, access_token: str):
                         yield json.dumps(data) + "\n"
                         time.sleep(0.01)
                 
-                if not page.get('next'): break
+                if not page.get('next') or len(items) < limit: break
                 offset += limit
             return 
         else:
