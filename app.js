@@ -405,6 +405,12 @@ async function processStream(res) {
         if (data.error) throw new Error(data.error);
         if (data.status) {
           if (data.status === 'searching') status.textContent = 'Localizando faixas...';
+          if (data.status === 'fallback') {
+            console.warn('Backend usando modo Scraper. Motivo:', data.reason);
+            if (!data.keys_found) {
+              showToast('Aviso: API Oficial não configurada. Limite de 100 músicas ativo.', 5000);
+            }
+          }
           continue;
         }
         if (state.songs[data.id]) continue;
@@ -451,6 +457,11 @@ function addSongToContainer(track, container) {
   img.alt = escapeHtml(track.title);
   img.loading = 'lazy';
   img.crossOrigin = 'anonymous'; // Essencial para CORS e Exportação
+
+  // Fallback se a imagem do Spotify falhar (CORS ou 404)
+  img.onerror = () => {
+    img.src = 'https://community.spotify.com/t5/image/serverpage/image-id/25294i2836511C333E6E85';
+  };
 
   const tooltip = document.createElement('div');
   tooltip.className = 'tooltip';

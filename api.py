@@ -71,6 +71,7 @@ def scrape_spotify_generator(url: str, access_token: str):
     # --- TENTATIVA 1: API OFICIAL (Estável e com Capas) ---
     try:
         yield json.dumps({"status": "connected", "method": "official"}) + "\n"
+        logger.info(f"Processando playlist {playlist_id} via API Oficial...")
         
         # Diagnóstico de chaves (ajuda a descobrir se o .env foi lido)
         if CLIENT_ID and CLIENT_SECRET:
@@ -85,23 +86,22 @@ def scrape_spotify_generator(url: str, access_token: str):
             try:
                 sp.me() # Teste rápido de token
             except:
-                logger.warning("Token de usuário falhou. Tentando Client Credentials...")
+                logger.warning("Token de usuário inválido ou expirado. Tentando Client Credentials...")
                 sp = None
-        else:
-            logger.info("Nenhum token de usuário fornecido pelo frontend. Tentando Client Credentials...")
 
         # Fallback para Client Credentials (estável para playlists públicas)
         if sp is None and CLIENT_ID and CLIENT_SECRET:
-            from spotipy.oauth2 import SpotifyClientCredentials
-            auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
-            sp = spotipy.Spotify(auth_manager=auth_manager)
-            if sp:
-                logger.info("Client Credentials configurado e usado com sucesso.")
-            else:
-                logger.warning("Client Credentials não configurado (CLIENT_ID/SECRET ausentes) ou falhou na inicialização.")
+            try:
+                from spotipy.oauth2 import SpotifyClientCredentials
+                auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
+                sp = spotipy.Spotify(auth_manager=auth_manager)
+                logger.info("Autenticação Client Credentials configurada.")
+            except Exception as auth_err:
+                logger.error(f"Falha ao configurar Client Credentials: {auth_err}")
 
         if sp:
-            pl_info = sp.playlist(playlist_id, fields="name,tracks.total")
+            # Removemos o filtro de fields para evitar erros de estrutura
+            pl_info = sp.playlist(playlist_id)
             total = pl_info.get('tracks', {}).get('total', 0)
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
@@ -125,7 +125,7 @@ def scrape_spotify_generator(url: str, access_token: str):
             logger.warning("Nenhuma autenticação (usuário ou Client Credentials) foi bem-sucedida. Caindo para o Scraper.")
 
     except Exception as e:
-        logger.exception(f"API Oficial falhou inesperadamente. Tentando modo Scraper...") # Use logger.exception for traceback
+        logger.exception("API Oficial falhou inesperadamente") 
         yield json.dumps({"status": "fallback", "reason": str(e), "keys_found": bool(CLIENT_ID)}) + "\n"
 
     # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) ---
