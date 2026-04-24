@@ -255,6 +255,8 @@ function loadStateFromUrl() {
   if (!hash) return;
   try {
     const data = JSON.parse(decodeURIComponent(atob(hash)));
+    if (Object.keys(data.songs).length > 0) $('#emptyState').hidden = true;
+
     state.songs = data.songs;
 
     // Rebuild Tiers
@@ -443,13 +445,22 @@ function addSongToContainer(track, container) {
   const card = document.createElement('div');
   card.className = 'song';
   card.dataset.id = track.id;
-  card.innerHTML = `
-    <img src="${track.cover || ''}" alt="${escapeHtml(track.title)}" loading="lazy">
-    <div class="tooltip">
-      <div class="title">${escapeHtml(track.title)}</div>
-      <div class="artist">${escapeHtml(track.artist)}</div>
-    </div>
+
+  const img = document.createElement('img');
+  img.src = track.cover || 'https://community.spotify.com/t5/image/serverpage/image-id/25294i2836511C333E6E85'; // Capa padrão se vazio
+  img.alt = escapeHtml(track.title);
+  img.loading = 'lazy';
+  img.crossOrigin = 'anonymous'; // Essencial para CORS e Exportação
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'tooltip';
+  tooltip.innerHTML = `
+    <div class="title">${escapeHtml(track.title)}</div>
+    <div class="artist">${escapeHtml(track.artist)}</div>
   `;
+
+  card.appendChild(img);
+  card.appendChild(tooltip);
   container.appendChild(card);
 }
 

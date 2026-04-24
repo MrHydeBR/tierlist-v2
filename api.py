@@ -44,12 +44,22 @@ def process_item(item):
     track = item.get('track')
     if not track:
         return None
+    
     track_id = track.get('id') or f"temp-{time.time()}"
     title = track.get('name') or "Sem título"
     artist = ", ".join([a['name'] for a in track.get('artists', [])]) or "Desconhecido"
-    cover = ""
-    if track.get('album') and track['album'].get('images'):
-        cover = track['album']['images'][0]['url']
+    
+    # Busca robusta pela capa
+    cover = None
+    album = track.get('album', {})
+    images = album.get('images', [])
+    if images:
+        # Tenta pegar a imagem de tamanho médio (índice 1) ou a maior (0)
+        cover = images[1]['url'] if len(images) > 1 else images[0]['url']
+    
+    if not cover:
+        cover = "" # Fallback para string vazia
+        
     return {"id": track_id, "title": title, "artist": artist, "cover": cover}
 
 def scrape_spotify_generator(url: str, access_token: str):
@@ -68,12 +78,18 @@ def scrape_spotify_generator(url: str, access_token: str):
             except:
                 logger.warning("Token de usuário falhou. Tentando Client Credentials...")
                 sp = None
+        else:
+            logger.info("Nenhum token de usuário fornecido pelo frontend. Tentando Client Credentials...")
 
         # Fallback para Client Credentials (estável para playlists públicas)
         if sp is None and CLIENT_ID and CLIENT_SECRET:
             from spotipy.oauth2 import SpotifyClientCredentials
             auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
             sp = spotipy.Spotify(auth_manager=auth_manager)
+            if sp:
+                logger.info("Client Credentials configurado e usado com sucesso.")
+            else:
+                logger.warning("Client Credentials não configurado (CLIENT_ID/SECRET ausentes) ou falhou na inicialização.")
 
         if sp:
             pl_info = sp.playlist(playlist_id, fields="name,tracks.total")
@@ -96,6 +112,8 @@ def scrape_spotify_generator(url: str, access_token: str):
                 if not page.get('next'): break
                 offset += limit
             return # Sucesso com API oficial
+        else:
+            logger.warning("Nenhuma autenticação (usuário ou Client Credentials) foi bem-sucedida. Caindo para o Scraper.")
 
     except Exception as e:
         logger.warning(f"API Oficial falhou (Erro: {e}). Tentando modo Scraper...")
@@ -140,18 +158,21 @@ def _parse_track(item: dict) -> dict | None:
     artists = item.get("artists") or []
     artist = subtitle or ", ".join(a.get("name", "") for a in artists) or "Desconhecido"
     
-    # Cover art (if available)
-    cover = item.get("imageUrl") or ""
-    if not cover and item.get("album", {}).get("images"):
-        cover = item["album"]["images"][0].get("url", "")
+    # Busca exaustiva pela capa no JSON do Embed
+    cover = item.get("imageUrl")
     
-    # If still no cover, check for 'image' field in new structure
-    if not cover and item.get("image"):
-        images = item["image"]
-        if isinstance(images, list) and len(images) > 0:
-            cover = images[0].get("url", "")
+    if not cover and "image" in item:
+        img_data = item["image"]
+        if isinstance(img_data, list) and len(img_data) > 0:
+            cover = img_data[0].get("url")
+        elif isinstance(img_data, dict):
+            cover = img_data.get("url")
+
+    if not cover and "album" in item:
+        imgs = item["album"].get("images", [])
+        if imgs: cover = imgs[0].get("url")
             
-    return {"id": track_id, "title": title, "artist": artist, "cover": cover}
+    return {"id": track_id, "title": title, "artist": artist, "cover": cover or ""}
 
 @app.get("/api/playlist/{playlist_id}")
 async def get_playlist(playlist_id: str):
