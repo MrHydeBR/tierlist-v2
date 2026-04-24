@@ -169,7 +169,7 @@ def scrape_spotify_generator(url: str, access_token: str):
             limit = 100
             while True:
                 # Solução para o 403: Especificamos apenas os campos de TRACK, ignorando episódios
-                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, fields="items(track(id,name,artists,album(images))),next")
+                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, fields="items(track(id,name,artists,album(images.url))),next")
                 items = page.get('items', [])
                 if not items: break
                 
@@ -180,7 +180,7 @@ def scrape_spotify_generator(url: str, access_token: str):
                         time.sleep(0.01)
                 
                 if not page.get('next') or len(items) < limit: break
-                offset += limit
+                offset += limit # Incrementa o offset para a próxima página
             return
         else:
             raise Exception("Autenticação Spotify falhou (sem token de usuário ou Client Credentials)")
