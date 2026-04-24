@@ -69,6 +69,12 @@ def scrape_spotify_generator(url: str, access_token: str):
     try:
         yield json.dumps({"status": "connected", "method": "official"}) + "\n"
         
+        # Diagnóstico de chaves (ajuda a descobrir se o .env foi lido)
+        if CLIENT_ID and CLIENT_SECRET:
+            logger.info(f"API Oficial: Chaves configuradas com sucesso (ID: {CLIENT_ID[:5]}...)")
+        else:
+            logger.warning("ERRO: SPOTIFY_CLIENT_ID ou SPOTIFY_CLIENT_SECRET ausentes no ambiente!")
+        
         sp = None
         # Tenta usar o token do usuário se fornecido
         if access_token and access_token.strip():
@@ -117,7 +123,7 @@ def scrape_spotify_generator(url: str, access_token: str):
 
     except Exception as e:
         logger.warning(f"API Oficial falhou (Erro: {e}). Tentando modo Scraper...")
-        yield json.dumps({"status": "fallback", "reason": str(e)}) + "\n"
+        yield json.dumps({"status": "fallback", "reason": str(e), "keys_found": bool(CLIENT_ID)}) + "\n"
 
     # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) ---
     try:
@@ -161,12 +167,17 @@ def _parse_track(item: dict) -> dict | None:
     # Busca exaustiva pela capa no JSON do Embed
     cover = item.get("imageUrl")
     
-    if not cover and "image" in item:
-        img_data = item["image"]
+    # Spotify 2024/2025: As imagens agora podem estar em 'image', 'images' ou 'coverArt'
+    img_fields = ["image", "images", "coverArt"]
+    for field in img_fields:
+        if cover: break
+        img_data = item.get(field)
+        if not img_data: continue
+        
         if isinstance(img_data, list) and len(img_data) > 0:
-            cover = img_data[0].get("url")
+            cover = img_data[0].get("url") or img_data[0].get("sources", [{}])[0].get("url")
         elif isinstance(img_data, dict):
-            cover = img_data.get("url")
+            cover = img_data.get("url") or img_data.get("sources", [{}])[0].get("url")
 
     if not cover and "album" in item:
         imgs = item["album"].get("images", [])
