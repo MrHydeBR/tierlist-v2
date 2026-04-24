@@ -70,6 +70,12 @@ def process_item(item):
         
     return {"id": track_id, "title": title, "artist": artist, "cover": cover}
 
+# Headers necessários para o Scraper de Embed funcionar
+_EMBED_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
 def _parse_track(item: dict) -> dict | None:
     uri = item.get("uri", "")
     track_id = item.get("id") or (uri.split(":")[-1] if ":" in uri else uri)
@@ -135,16 +141,17 @@ def scrape_spotify_generator(url: str, access_token: str):
 
         if sp:
             logger.info(f"Backend: Iniciando busca oficial para {playlist_id}")
-            # Simplificamos ao máximo para evitar 403
-            pl_info = sp.playlist(playlist_id)
-            total = pl_info.get('tracks', {}).get('total', 0)
+            # Buscamos apenas o total para o status
+            pl_data = sp.playlist_items(playlist_id, fields="total", limit=1)
+            total = pl_data.get('total', 0)
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
             offset = 0
             limit = 100
             while True:
-                # Forçamos apenas 'track' para evitar erro de permissão com podcasts
-                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, additional_types=['track'])
+                # REVERSÃO TÉCNICA: Usamos playlist_tracks que é mais antigo porém mais 
+                # estável contra o erro 403 de episodes em contas de serviço.
+                page = sp.playlist_tracks(playlist_id, limit=limit, offset=offset)
                 items = page.get('items', [])
                 if not items: break
                 
@@ -154,8 +161,8 @@ def scrape_spotify_generator(url: str, access_token: str):
                         yield json.dumps(data) + "\n"
                         time.sleep(0.01)
                 
-                # Spotify Pagination: verifica se há próxima página
-                if not page.get('next'): break
+                # Paginação: se não houver 'next' ou processamos tudo, paramos.
+                if not page.get('next') or len(items) < limit: break
                 offset += limit
             return 
         else:

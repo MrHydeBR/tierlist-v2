@@ -353,12 +353,14 @@ async function loadPlaylist(playlistUrl) {
         console.log('Tentando busca direta via Navegador (Token de Usuário)...');
         status.textContent = 'Acessando Spotify diretamente...';
 
-        let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50`;
+        // Usamos o endpoint /items que é a recomendação atual do Spotify
+        let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/items?limit=50&additional_types=track`;
         let allTracks = [];
 
         while (nextUrl) {
           const spRes = await fetch(nextUrl, {
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 'Authorization': `Bearer ${token}` },
+            method: 'GET'
           });
 
           if (!spRes.ok) throw new Error('Falha na API direta');
