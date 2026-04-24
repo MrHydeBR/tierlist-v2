@@ -15,7 +15,7 @@ const state = { songs: {} };
 // Spotify PKCE Auth
 // =========================================================
 const CLIENT_ID = '1088c40fd007430eb1d224267f41c2c6';
-const SCOPES = 'playlist-read-private playlist-read-collaborative';
+const SCOPES = 'playlist-read-private playlist-read-collaborative user-read-email';
 
 function redirectUri() {
   return window.location.origin;
@@ -298,6 +298,7 @@ async function loadPlaylist(playlistUrl, token) {
     }
     const playlist = await plRes.json();
     console.log('Playlist:', playlist.name, '| total:', playlist.tracks?.total);
+    console.log('playlist.tracks:', JSON.stringify(playlist.tracks)?.substring(0, 300));
     addItems(playlist.tracks?.items);
 
     // Paginate remaining pages (next points back to /tracks endpoint)
