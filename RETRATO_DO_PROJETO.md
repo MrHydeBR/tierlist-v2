@@ -36,7 +36,18 @@ Durante as mudanças constantes, a interface sofreu instabilidades devido a conf
 
 ---
 
-## 4. Fase 3: A Estabilização Profissional (API Oficial)
+## 4. Fase 3: A e mesmo com a API Oficial, o Spotify bloqueia requisições (*Forbidden*) se o app tentar ler episódios de podcast sem autorização.
+
+*   **Problema:** Spotipy solicita `track,episode` por padrão, causando erro 403 imediato.
+*   **Solução:** Forçamos o parâmetro `additional_types=['track']` tanto no Frontend quanto no Backend para garantir 100% de acesso.
+
+---
+
+## 5. Fase 4: Arquitetura Híbrida e Resiliente
+Para vencer o limite de 100 músicas do Scraper e a instabilidade do servidor, o app agora tenta carregar dados diretamente do navegador do usuário.
+
+*   **Status Atual:** Busca direta via navegador ativa (prioritária), Fallback para API Oficial via Backend (secundária) e Scraper de Embed "blindado" (emergência).
+*   **Resultado:** Carregamento estável de playlists grandes (116+ músicas) com capas corrigidas via SVG Data-URI.
 
 ### Abordagem: Spotipy + Client Credentials
 Decidimos abandonar a raspagem de tela em favor da comunicação direta com os servidores do Spotify.
