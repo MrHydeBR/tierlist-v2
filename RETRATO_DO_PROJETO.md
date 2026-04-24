@@ -47,7 +47,8 @@ Durante as mudanças constantes, a interface sofreu instabilidades devido a conf
 Para vencer o limite de 100 músicas do Scraper e a instabilidade do servidor, o app agora tenta carregar dados diretamente do navegador do usuário.
 
 *   **Status Atual:** Busca direta via navegador ativa (prioritária), Fallback para API Oficial via Backend (secundária) e Scraper de Embed "blindado" (emergência).
-*   **Resolução de Erro:** Corrigido o "name not defined" movendo constantes globais para o topo e forçando o tipo `track` para evitar o erro 403 (podcasts).
+*   **Resolução de Erro:** Corrigido o erro de escopo de variáveis no Python movendo constantes como `_EMBED_HEADERS` para o topo.
+*   **Nova Abordagem:** Simplificação radical das chamadas de API (remoção de `fields` e `additional_types`) para contornar o erro 403 Forbidden que bloqueava o acesso a metadados.
 *   **Resultado:** Carregamento estável de playlists grandes (116+ músicas) com capas corrigidas via SVG Data-URI.
 
 ### Abordagem: Spotipy + Client Credentials

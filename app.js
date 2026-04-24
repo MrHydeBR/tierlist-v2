@@ -353,8 +353,8 @@ async function loadPlaylist(playlistUrl) {
         console.log('Tentando busca direta via Navegador (Token de Usuário)...');
         status.textContent = 'Acessando Spotify diretamente...';
 
-        // Simplificamos a URL direta para evitar filtros que causem 403
-        let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&fields=items(track(id,name,artists,album(images))),next`;
+        // Remoção radical de parâmetros de campos para evitar o 403
+        let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50`;
         let allTracks = [];
 
         while (nextUrl) {
