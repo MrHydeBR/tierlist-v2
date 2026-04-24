@@ -125,7 +125,7 @@ def scrape_spotify_generator(url: str, access_token: str):
             logger.warning("Nenhuma autenticação (usuário ou Client Credentials) foi bem-sucedida. Caindo para o Scraper.")
 
     except Exception as e:
-        logger.warning(f"API Oficial falhou (Erro: {e}). Tentando modo Scraper...")
+        logger.exception(f"API Oficial falhou inesperadamente. Tentando modo Scraper...") # Use logger.exception for traceback
         yield json.dumps({"status": "fallback", "reason": str(e), "keys_found": bool(CLIENT_ID)}) + "\n"
 
     # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) ---
