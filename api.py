@@ -164,10 +164,10 @@ def scrape_spotify_generator(url: str, access_token: str):
             total = pl_info.get('tracks', {}).get('total', 0) if pl_info else 0
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
-            offset = 0 # Inicia o offset para paginação
+            offset = 0
             limit = 100
             while True:
-                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, additional_types=['track'])
+                page = sp.playlist_items(playlist_id, limit=limit, offset=offset) # Removido additional_types
                 items = page.get('items', [])
                 if not items: break
                 
@@ -178,10 +178,10 @@ def scrape_spotify_generator(url: str, access_token: str):
                         time.sleep(0.01)
                 
                 if not page.get('next'): break
-                offset += limit # Incrementa o offset para a próxima página
-            return 
+                offset += limit
+            return
         else:
-            raise Exception("Autenticação falhou")
+            raise Exception("Autenticação Spotify falhou (sem token de usuário ou Client Credentials)")
 
     except Exception as e:
         logger.warning(f"API Oficial falhou ({e}). Usando modo Scraper.")
