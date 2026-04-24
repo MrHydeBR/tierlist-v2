@@ -290,8 +290,8 @@ async function loadPlaylist(playlistUrl, token) {
       }
     };
 
-    // Use main playlist endpoint (avoids /tracks sub-endpoint which may be restricted)
-    const plRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+    // Fetch playlist name for display
+    const plRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name,tracks.total`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     if (!plRes.ok) {
@@ -300,23 +300,21 @@ async function loadPlaylist(playlistUrl, token) {
       throw new Error(`Spotify ${plRes.status}: ${JSON.stringify(body)}`);
     }
     const playlist = await plRes.json();
-    console.log('Playlist keys:', Object.keys(playlist || {}));
     console.log('Playlist:', playlist.name, '| total:', playlist.tracks?.total);
-    console.log('playlist.tracks (500):', JSON.stringify(playlist.tracks)?.substring(0, 500));
-    addItems(playlist.tracks?.items);
 
-    // Paginate remaining pages (next points back to /tracks endpoint)
-    let nextUrl = playlist.tracks?.next;
+    // Fetch tracks via the dedicated /tracks endpoint (supports pagination, market param)
+    let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?market=from_token&limit=100`;
     while (nextUrl) {
       const res = await fetch(nextUrl, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        console.error('Pagination error:', JSON.stringify(body));
-        break;
+        console.error('Tracks error:', JSON.stringify(body));
+        throw new Error(`Spotify ${res.status}: ${JSON.stringify(body)}`);
       }
       const data = await res.json();
+      console.log('Tracks page: items=', data.items?.length, 'next=', data.next);
       addItems(data.items);
       nextUrl = data.next || null;
     }
