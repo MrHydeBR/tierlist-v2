@@ -297,8 +297,9 @@ async function loadPlaylist(playlistUrl, token) {
       throw new Error(`Spotify ${plRes.status}: ${JSON.stringify(body)}`);
     }
     const playlist = await plRes.json();
+    console.log('Playlist keys:', Object.keys(playlist || {}));
     console.log('Playlist:', playlist.name, '| total:', playlist.tracks?.total);
-    console.log('playlist.tracks:', JSON.stringify(playlist.tracks)?.substring(0, 300));
+    console.log('playlist.tracks (500):', JSON.stringify(playlist.tracks)?.substring(0, 500));
     addItems(playlist.tracks?.items);
 
     // Paginate remaining pages (next points back to /tracks endpoint)
