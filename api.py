@@ -17,11 +17,14 @@ load_dotenv()
 CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 
-logging.basicConfig(level=logging.INFO)
+# Configure logging early
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+logger.info(f"DEBUG: CLIENT_ID carregado: {CLIENT_ID is not None}, valor: {CLIENT_ID[:5] if CLIENT_ID else 'None'}")
+logger.info(f"DEBUG: CLIENT_SECRET carregado: {CLIENT_SECRET is not None}, valor: {'*****' if CLIENT_SECRET else 'None'}")
 
+app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
