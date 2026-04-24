@@ -255,84 +255,91 @@ async function loadPlaylist(playlistUrl) {
     const playlistId = extractPlaylistId(playlistUrl);
     const token = await getToken();
 
-    let res;
-    if (token) {
-      console.log('Usando API Oficial (autenticado)');
-      res = await fetch('/api/scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: playlistUrl, access_token: token }),
-      });
-    } else {
-      console.log('Usando Scraper Embed (não autenticado)');
-      res = await fetch(`/api/playlist/${playlistId}`);
-    }
+    // Sempre tentamos a API Oficial primeiro (via Backend com Client Secret)
+    // Isso resolve o erro 403 e permite pegar 100+ músicas
+    console.log('Iniciando importação via API Oficial...');
+    let res = await fetch('/api/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: playlistUrl, access_token: token || '' }),
+    });
 
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail || `Erro ${res.status}`);
-    }
-
-    if (token) {
-      // Processamento de Stream (NDJSON)
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let count = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const data = JSON.parse(line);
-            if (data.error) throw new Error(data.error);
-            if (data.status) {
-              if (data.status === 'searching') status.textContent = 'Localizando faixas...';
-              continue;
-            }
-            if (state.songs[data.id]) continue;
-            state.songs[data.id] = data;
-            addSongToPool(data);
-            count++;
-            status.textContent = `Carregadas ${count} músicas...`;
-            $('#poolCount').textContent = count;
-          } catch (e) {
-            console.error('Erro ao parsear linha do stream:', e);
-          }
-        }
+      console.warn('API Oficial falhou, tentando Scraper de emergência...');
+      res = await fetch(`/api/playlist/${playlistId}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `Erro ${res.status}`);
       }
-    } else {
-      // Processamento de JSON único (Scraper)
+      
+      // Processamento de JSON único (Scraper fallback)
       const data = await res.json();
       const tracks = data.tracks || [];
-      let count = 0;
-
-      for (const track of tracks) {
-        if (state.songs[track.id]) continue;
-        state.songs[track.id] = track;
-        addSongToPool(track);
-        count++;
-        bar.style.width = Math.min((count / Math.max(tracks.length, 1)) * 90 + 10, 99) + '%';
-        status.textContent = `Carregadas ${count} músicas...`;
-        $('#poolCount').textContent = count;
-      }
+      processTracks(tracks);
+    } else {
+      // Processamento de Stream (NDJSON - API Oficial)
+      await processStream(res);
     }
 
     bar.style.width = '100%';
     status.textContent = 'Pronto! Músicas importadas.';
     setTimeout(() => { container.hidden = true; }, 2500);
-
   } catch (err) {
     showToast('Erro: ' + err.message);
     status.textContent = 'Falha ao carregar.';
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function processStream(res) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let count = 0;
+  const status = $('#loadingStatus');
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const data = JSON.parse(line);
+        if (data.error) throw new Error(data.error);
+        if (data.status) {
+          if (data.status === 'searching') status.textContent = 'Localizando faixas...';
+          continue;
+        }
+        if (state.songs[data.id]) continue;
+        state.songs[data.id] = data;
+        addSongToPool(data);
+        count++;
+        status.textContent = `Carregadas ${count} músicas...`;
+        $('#poolCount').textContent = count;
+      } catch (e) {
+        console.error('Erro no processamento da linha:', e);
+      }
+    }
+  }
+}
+
+function processTracks(tracks) {
+  const status = $('#loadingStatus');
+  const bar = $('#loadingProgress');
+  let count = 0;
+  for (const track of tracks) {
+    if (state.songs[track.id]) continue;
+    state.songs[track.id] = track;
+    addSongToPool(track);
+    count++;
+    bar.style.width = Math.min((count / Math.max(tracks.length, 1)) * 90 + 10, 99) + '%';
+    status.textContent = `Carregadas ${count} músicas...`;
+    $('#poolCount').textContent = count;
   }
 }
 

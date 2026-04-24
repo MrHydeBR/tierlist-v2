@@ -9,6 +9,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -52,7 +59,26 @@ def scrape_spotify_generator(url: str, access_token: str):
         playlist_id = extract_playlist_id(url)
         logger.info(f"Acessando playlist: {playlist_id}")
 
-        sp = spotipy.Spotify(auth=access_token)
+        sp = None
+        # Try user token first if provided
+        if access_token and access_token.strip():
+            sp = spotipy.Spotify(auth=access_token)
+            try:
+                # Test connection
+                sp.me()
+            except Exception:
+                logger.warning("Token de usuário inválido ou expirado. Tentando Client Credentials...")
+                sp = None
+
+        # Fallback to Client Credentials (stable for public playlists)
+        if sp is None:
+            if not CLIENT_ID or not CLIENT_SECRET:
+                yield json.dumps({"error": "Credenciais do Spotify (Client ID/Secret) não configuradas no servidor."}) + "\n"
+                return
+            
+            from spotipy.oauth2 import SpotifyClientCredentials
+            auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
+            sp = spotipy.Spotify(auth_manager=auth_manager)
 
         try:
             pl_info = sp.playlist(playlist_id, fields="name,tracks.total")
