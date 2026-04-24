@@ -344,69 +344,21 @@ async function loadPlaylist(playlistUrl) {
     bar.style.width = '10%';
     $('#emptyState').hidden = true;
 
-    const playlistId = extractPlaylistId(playlistUrl);
-    const token = await getToken();
+    extractPlaylistId(playlistUrl); // valida o link cedo — lança erro em álbuns/tracks
 
-    // --- NOVA ABORDAGEM: Tentar busca DIRETA no navegador primeiro ---
-    if (token) {
-      try {
-        console.log('Tentando busca direta via Navegador (Token de Usuário)...');
-        status.textContent = 'Acessando Spotify diretamente...';
-
-        // Remoção radical de parâmetros de campos para evitar o 403
-        let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50`;
-        let allTracks = [];
-
-        while (nextUrl) {
-          const spRes = await fetch(nextUrl, {
-            headers: { 'Authorization': `Bearer ${token}` },
-            method: 'GET'
-          });
-
-          if (!spRes.ok) throw new Error('Falha na API direta');
-
-          const page = await spRes.json();
-          const tracks = page.items.map(it => {
-            // Tenta pegar de 'track' ou 'item' (mudança recente da API)
-            const t = it.track || it.item;
-            if (!t) return null;
-            return {
-              id: t.id || `t-${Math.random()}`,
-              title: t.name,
-              artist: t.artists.map(a => a.name).join(', '),
-              cover: t.album?.images[0]?.url || ''
-            };
-          }).filter(Boolean);
-
-          processTracks(tracks);
-          allTracks = allTracks.concat(tracks);
-          nextUrl = page.next;
-          bar.style.width = '60%';
-        }
-
-        finishLoading(allTracks.length);
-        return; // Sucesso absoluto, interrompe o resto
-      } catch (directErr) {
-        console.warn('Busca direta falhou, tentando via Backend...', directErr);
-      }
-    }
-
-    // --- FALLBACK: Usar o Backend (API Oficial ou Scraper) ---
-    console.log('Iniciando importação via Backend...');
     const res = await fetch('/api/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: playlistUrl, access_token: token || '' }),
+      body: JSON.stringify({ url: playlistUrl }),
     });
 
-    if (!res.ok) { // Isso só deve acontecer para erros de rede/servidor, não para falhas da API Spotify
+    if (!res.ok) {
       const errorBody = await res.json().catch(() => ({}));
-      throw new Error(errorBody.detail || `Erro de rede/servidor: ${res.status}`);
+      throw new Error(errorBody.detail || `Erro ${res.status}`);
     }
 
-    // Processamento de Stream (NDJSON - Backend decide se é API Oficial ou Scraper)
     await processStream(res);
-    finishLoading();
+    finishLoading($('#pool').querySelectorAll('.song').length);
 
   } catch (err) {
     showToast('Erro: ' + err.message);
@@ -445,12 +397,8 @@ async function processStream(res) {
         const data = JSON.parse(line);
         if (data.error) throw new Error(data.error);
         if (data.status) {
-          if (data.status === 'searching') status.textContent = 'Localizando faixas...';
-          if (data.status === 'fallback') {
-            console.warn('Backend usando modo Scraper. Motivo:', data.reason);
-            if (!data.keys_found) {
-              showToast('Aviso: API Oficial não configurada. Limite de 100 músicas ativo.', 5000);
-            }
+          if (data.status === 'ok') {
+            status.textContent = `Carregando ${data.total} músicas...`;
           }
           continue;
         }
