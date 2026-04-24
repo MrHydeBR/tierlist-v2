@@ -240,7 +240,10 @@ function updatePoolCount() {
 
 function extractPlaylistId(url) {
   if (url.includes('playlist/')) return url.split('playlist/')[1].split('?')[0];
-  return url;
+  if (url.includes('album/')) throw new Error('Link de álbum detectado. Cole um link de playlist do Spotify.');
+  if (url.includes('track/')) throw new Error('Link de música detectado. Cole um link de playlist do Spotify.');
+  if (/^[A-Za-z0-9]{22}$/.test(url.trim())) return url.trim();
+  throw new Error('Link inválido. Cole o link de uma playlist do Spotify (open.spotify.com/playlist/...)');
 }
 
 async function loadPlaylist(playlistUrl, token) {
