@@ -238,6 +238,11 @@ function updatePoolCount() {
   $('#poolCount').textContent = $('#pool').querySelectorAll('.song').length;
 }
 
+function extractPlaylistId(url) {
+  if (url.includes('playlist/')) return url.split('playlist/')[1].split('?')[0];
+  return url;
+}
+
 async function loadPlaylist(playlistUrl, token) {
   const container = $('#loadingContainer');
   const bar = $('#loadingProgress');
@@ -247,56 +252,45 @@ async function loadPlaylist(playlistUrl, token) {
   try {
     btn.disabled = true;
     container.hidden = false;
-    status.textContent = 'Conectando ao Spotify...';
+    status.textContent = 'Importando músicas...';
     bar.style.width = '10%';
     $('#emptyState').hidden = true;
 
-    const response = await fetch('/api/scrape', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: playlistUrl, access_token: token }),
-    });
-
-    if (!response.ok) throw new Error('Erro ao conectar com o servidor');
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    const playlistId = extractPlaylistId(playlistUrl);
     let count = 0;
+    let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100&fields=next,items(track(id,name,artists(name),album(images)))`;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    while (nextUrl) {
+      const res = await fetch(nextUrl, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const data = JSON.parse(line);
-
-          if (data.status) {
-            if (data.status === 'connected') status.textContent = 'Conexão estabelecida!';
-            if (data.status === 'searching') status.textContent = 'Importando músicas...';
-            continue;
-          }
-
-          if (data.error) throw new Error(data.error);
-
-          if (data.id && !state.songs[data.id]) {
-            state.songs[data.id] = data;
-            addSongToPool(data);
-            count++;
-            bar.style.width = Math.min(count * 0.5 + 10, 95) + '%';
-            status.textContent = `Carregadas ${count} músicas...`;
-            $('#poolCount').textContent = count;
-          }
-        } catch (e) {
-          if (e.message && !e.message.startsWith('Unexpected')) throw e;
-        }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(`Spotify ${res.status}: ${body?.error?.message || res.statusText}`);
       }
+
+      const data = await res.json();
+
+      for (const item of (data.items || [])) {
+        const track = item?.track;
+        if (!track?.id) continue;
+        if (state.songs[track.id]) continue;
+        const song = {
+          id: track.id,
+          title: track.name || 'Sem título',
+          artist: (track.artists || []).map(a => a.name).join(', ') || 'Desconhecido',
+          cover: track.album?.images?.[0]?.url || '',
+        };
+        state.songs[song.id] = song;
+        addSongToPool(song);
+        count++;
+        bar.style.width = Math.min(count * 0.5 + 10, 95) + '%';
+        status.textContent = `Carregadas ${count} músicas...`;
+        $('#poolCount').textContent = count;
+      }
+
+      nextUrl = data.next || null;
     }
 
     bar.style.width = '100%';
