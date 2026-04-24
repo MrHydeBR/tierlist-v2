@@ -267,8 +267,8 @@ async function loadPlaylist(playlistUrl, token) {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        console.error('Spotify error body:', body);
-        throw new Error(`Spotify ${res.status}: ${body?.error?.message || res.statusText}`);
+        console.error('Spotify error body:', JSON.stringify(body));
+        throw new Error(`Spotify ${res.status}: ${JSON.stringify(body)}`);
       }
 
       const data = await res.json();
