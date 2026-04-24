@@ -442,18 +442,20 @@ function addSongToContainer(track, container) {
   card.dataset.id = track.id;
 
   const img = document.createElement('img');
-  // Placeholder SVG seguro que não causa erro de CORS
-  const placeholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23282828"%3E%3Crect width="24" height="24"/%3E%3Cpath d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="%23555"/%3E%3C/svg%3E';
+  // Placeholder SVG embutido (não faz requisição externa, zero erro de CORS)
+  const placeholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23333"%3E%3Crect width="24" height="24"/%3E%3Cpath d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="%23666"/%3E%3C/svg%3E';
 
   img.loading = 'lazy';
   img.alt = escapeHtml(track.title);
 
-  // REGRA DE OURO: crossOrigin antes do src para evitar erro de Canvas sujo no PNG
-  // Aplica crossorigin apenas para URLs externas (Spotify), não para o SVG embutido
+  // REGRA DE OURO: crossorigin deve ser definido ANTES do src
+  // apenas para URLs externas (http) para permitir a exportação do PNG
   if (track.cover && track.cover.startsWith('http')) {
     img.setAttribute('crossorigin', 'anonymous');
+    img.src = track.cover;
+  } else {
+    img.src = placeholder;
   }
-  img.src = track.cover || placeholder;
 
   // Fallback se a imagem do Spotify falhar ou for bloqueada
   img.onerror = () => {
