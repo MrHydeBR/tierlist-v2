@@ -53,80 +53,68 @@ def process_item(item):
     return {"id": track_id, "title": title, "artist": artist, "cover": cover}
 
 def scrape_spotify_generator(url: str, access_token: str):
+    playlist_id = extract_playlist_id(url)
+    
+    # --- TENTATIVA 1: API OFICIAL (Estável e com Capas) ---
     try:
-        yield json.dumps({"status": "connected"}) + "\n"
-
-        playlist_id = extract_playlist_id(url)
-        logger.info(f"Acessando playlist: {playlist_id}")
-
+        yield json.dumps({"status": "connected", "method": "official"}) + "\n"
+        
         sp = None
-        # Try user token first if provided
+        # Tenta usar o token do usuário se fornecido
         if access_token and access_token.strip():
             sp = spotipy.Spotify(auth=access_token)
             try:
-                # Test connection
-                sp.me()
-            except Exception:
-                logger.warning("Token de usuário inválido ou expirado. Tentando Client Credentials...")
+                sp.me() # Teste rápido de token
+            except:
+                logger.warning("Token de usuário falhou. Tentando Client Credentials...")
                 sp = None
 
-        # Fallback to Client Credentials (stable for public playlists)
-        if sp is None:
-            if not CLIENT_ID or not CLIENT_SECRET:
-                yield json.dumps({"error": "Credenciais do Spotify (Client ID/Secret) não configuradas no servidor."}) + "\n"
-                return
-            
+        # Fallback para Client Credentials (estável para playlists públicas)
+        if sp is None and CLIENT_ID and CLIENT_SECRET:
             from spotipy.oauth2 import SpotifyClientCredentials
             auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
             sp = spotipy.Spotify(auth_manager=auth_manager)
 
-        try:
+        if sp:
             pl_info = sp.playlist(playlist_id, fields="name,tracks.total")
-        except Exception as e_pl:
-            logger.error(f"Playlist não encontrada: {e_pl}")
-            yield json.dumps({"error": f"Playlist não encontrada ou privada: {str(e_pl)}"}) + "\n"
-            return
+            total = pl_info.get('tracks', {}).get('total', 0)
+            yield json.dumps({"status": "searching", "total": total}) + "\n"
 
-        name = pl_info.get('name', '?')
-        total = pl_info.get('tracks', {}).get('total', '?')
-        logger.info(f"Playlist: {name} ({total} músicas)")
-
-        yield json.dumps({"status": "searching"}) + "\n"
-
-        sent_count = 0
-        offset = 0
-        limit = 100
-
-        while True:
-            try:
+            offset = 0
+            limit = 100
+            while True:
                 page = sp.playlist_items(playlist_id, limit=limit, offset=offset)
-            except Exception as e_page:
-                logger.error(f"Erro ao buscar página offset={offset}: {e_page}")
-                yield json.dumps({"error": str(e_page)}) + "\n"
-                return
-
-            items = page.get('items', [])
-            logger.info(f"Página offset={offset}: {len(items)} itens")
-
-            if not items:
-                break
-
-            for item in items:
-                data = process_item(item)
-                if data:
-                    yield json.dumps(data) + "\n"
-                    sent_count += 1
-                    time.sleep(0.01)
-
-            if not page.get('next'):
-                break
-            offset += limit
-
-        logger.info(f"Total enviado: {sent_count}")
+                items = page.get('items', [])
+                if not items: break
+                
+                for item in items:
+                    data = process_item(item)
+                    if data:
+                        yield json.dumps(data) + "\n"
+                        time.sleep(0.01)
+                
+                if not page.get('next'): break
+                offset += limit
+            return # Sucesso com API oficial
 
     except Exception as e:
-        logger.error(f"Erro geral: {e}")
-        yield json.dumps({"error": str(e)}) + "\n"
+        logger.warning(f"API Oficial falhou (Erro: {e}). Tentando modo Scraper...")
+        yield json.dumps({"status": "fallback", "reason": str(e)}) + "\n"
+
+    # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) ---
+    try:
+        import asyncio
+        # O scraper é assíncrono, então usamos um helper para rodar sincronamente
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        playlist_data = loop.run_until_complete(get_playlist(playlist_id))
+        loop.close()
+        
+        for track in playlist_data.get("tracks", []):
+            yield json.dumps(track) + "\n"
+    except Exception as e:
+        logger.error(f"Fallback falhou: {e}")
+        yield json.dumps({"error": f"Não foi possível carregar a playlist: {str(e)}"}) + "\n"
 
 @app.post("/api/scrape")
 def api_scrape(req: ScrapeRequest):

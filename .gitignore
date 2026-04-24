@@ -1,11 +1,11 @@
 __pycache__/
+*.py[cod]
+*$py.class
 .env
-.cache
+.venv
+env/
 venv/
+ENV/
 .vscode/
 .idea/
-*.pyc
-.playwright/
-node_modules/
-dist/
-build/
+*.log

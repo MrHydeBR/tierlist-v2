@@ -6,13 +6,12 @@ Site interativo para classificar músicas de uma playlist do Spotify em tiers S 
 
 ## Funcionalidades
 
-- **Integração real com Spotify** via OAuth PKCE (sem backend, sem segredos)
-- **Tier list drag-and-drop** com 6 níveis (S, A, B, C, D, F)
-- **Estilos musicais editáveis** (renomear, cor, adicionar, remover) — vem com Rock, Grunge, Pop, Festa, Relax e Classic por padrão
-- **Filtro por estilo** para classificar por gênero
+- **Integração Híbrida Spotify**: Suporte a OAuth PKCE (Client-side) e Backend (FastAPI) para extração robusta de playlists.
+- **Tier list interativa**: Drag-and-drop fluido utilizando SortableJS.
+- **Tiers Customizáveis**: Clique nos nomes dos tiers (S, A, B...) para renomear como desejar.
 - **Exportar como PNG** para postar em redes sociais
-- **Compartilhar via link** — o estado completo é codificado na URL
-- **Tema claro/escuro** com alternância rápida
+- **Compartilhamento Inteligente**: O estado da sua lista (músicas e posições) é salvo diretamente no link (URL hash).
+- **Design Moderno**: Interface responsiva inspirada no Spotify com suporte a **Tema Claro e Escuro**.
 - **Responsivo** — funciona em desktop e mobile
 
 ## Como configurar (só na primeira vez)

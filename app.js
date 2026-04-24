@@ -9,7 +9,13 @@ const DEFAULT_TIERS = [
   { id: 'tier-d', label: 'D', color: '#4ea3ff' },
 ];
 
-const state = { songs: {} };
+const state = {
+  songs: {},
+  theme: localStorage.getItem('theme') || 'dark'
+};
+
+// Aplicar tema inicial
+document.documentElement.setAttribute('data-theme', state.theme);
 
 // =========================================================
 // Spotify PKCE Auth
@@ -176,6 +182,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initEventListeners();
   initDragAndDrop();
   updateAuthUI();
+  loadStateFromUrl();
   if (authed) showToast('Conectado ao Spotify!');
 });
 
@@ -187,7 +194,7 @@ function initTiers() {
     const row = document.createElement('div');
     row.className = 'tier-row';
     row.innerHTML = `
-      <div class="tier-label" style="background-color: ${tier.color}">${tier.label}</div>
+      <div class="tier-label" style="background-color: ${tier.color}" contenteditable="true" spellcheck="false">${tier.label}</div>
       <div class="tier-drop" id="${tier.id}"></div>
     `;
     board.appendChild(row);
@@ -207,9 +214,92 @@ function initEventListeners() {
 
   $('#btnReset').onclick = () => {
     if (confirm('Deseja realmente limpar toda a sua Tier List?')) {
-      location.reload();
+      window.location.hash = '';
+      window.location.reload();
     }
   };
+
+  $('#btnShare')?.addEventListener('click', saveStateToUrl);
+  $('#btnExport')?.addEventListener('click', exportAsImage);
+  $('#btnThemeToggle')?.addEventListener('click', toggleTheme);
+}
+
+function toggleTheme() {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', state.theme);
+  localStorage.setItem('theme', state.theme);
+}
+
+function saveStateToUrl() {
+  const tiers = [];
+  $$('.tier-row').forEach(row => {
+    const label = row.querySelector('.tier-label').textContent;
+    const color = row.querySelector('.tier-label').style.backgroundColor;
+    const songIds = Array.from(row.querySelectorAll('.song')).map(s => s.dataset.id);
+    tiers.push({ label, color, songIds });
+  });
+
+  const poolIds = Array.from($('#pool').querySelectorAll('.song')).map(s => s.dataset.id);
+  const data = { tiers, poolIds, songs: state.songs };
+
+  // Encoding base64 simples para a URL
+  const encoded = btoa(encodeURIComponent(JSON.stringify(data)));
+  window.location.hash = encoded;
+
+  navigator.clipboard.writeText(window.location.href);
+  showToast('Link copiado para a área de transferência!');
+}
+
+function loadStateFromUrl() {
+  const hash = window.location.hash.substring(1);
+  if (!hash) return;
+  try {
+    const data = JSON.parse(decodeURIComponent(atob(hash)));
+    state.songs = data.songs;
+
+    // Rebuild Tiers
+    const board = $('#tierBoard');
+    board.innerHTML = '';
+    data.tiers.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.className = 'tier-row';
+      row.innerHTML = `
+        <div class="tier-label" style="background-color: ${t.color}" contenteditable="true" spellcheck="false">${t.label}</div>
+        <div class="tier-drop" id="tier-custom-${i}"></div>
+      `;
+      board.appendChild(row);
+      t.songIds.forEach(id => {
+        if (state.songs[id]) addSongToContainer(state.songs[id], row.querySelector('.tier-drop'));
+      });
+    });
+
+    // Rebuild Pool
+    $('#pool').innerHTML = '';
+    data.poolIds.forEach(id => {
+      if (state.songs[id]) addSongToPool(state.songs[id]);
+    });
+
+    updatePoolCount();
+    initDragAndDrop();
+  } catch (e) {
+    console.error('Erro ao carregar estado da URL', e);
+  }
+}
+
+async function exportAsImage() {
+  const board = $('#tierBoard');
+  if (!board) return;
+  showToast('Gerando imagem...');
+  const canvas = await html2canvas(board, {
+    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--color-bg'),
+    scale: 2,
+    logging: false,
+    useCORS: true
+  });
+  const link = document.createElement('a');
+  link.download = `my-tierlist-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
 }
 
 function initDragAndDrop() {
@@ -271,7 +361,7 @@ async function loadPlaylist(playlistUrl) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || `Erro ${res.status}`);
       }
-      
+
       // Processamento de JSON único (Scraper fallback)
       const data = await res.json();
       const tracks = data.tracks || [];
@@ -344,8 +434,11 @@ function processTracks(tracks) {
 }
 
 function addSongToPool(track) {
-  const pool = $('#pool');
-  if (!pool) return;
+  addSongToContainer(track, $('#pool'));
+}
+
+function addSongToContainer(track, container) {
+  if (!container) return;
 
   const card = document.createElement('div');
   card.className = 'song';
@@ -357,7 +450,7 @@ function addSongToPool(track) {
       <div class="artist">${escapeHtml(track.artist)}</div>
     </div>
   `;
-  pool.appendChild(card);
+  container.appendChild(card);
 }
 
 function escapeHtml(str) {
