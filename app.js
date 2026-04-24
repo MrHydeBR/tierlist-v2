@@ -198,19 +198,12 @@ function initEventListeners() {
   $('#btnLoadPlaylist').onclick = async () => {
     const url = $('#playlistUrl').value.trim();
     if (!url) { showToast('Por favor, cole um link do Spotify'); return; }
-
-    const token = await getToken();
-    if (!token) {
-      showToast('Conecte ao Spotify primeiro');
-      return;
-    }
-
-    loadPlaylist(url, token);
+    loadPlaylist(url);
   };
 
-  $('#playlistUrl').onkeypress = (e) => {
+  $('#playlistUrl').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') $('#btnLoadPlaylist').click();
-  };
+  });
 
   $('#btnReset').onclick = () => {
     if (confirm('Deseja realmente limpar toda a sua Tier List?')) {
@@ -246,7 +239,7 @@ function extractPlaylistId(url) {
   throw new Error('Link inválido. Cole o link de uma playlist do Spotify (open.spotify.com/playlist/...)');
 }
 
-async function loadPlaylist(playlistUrl, token) {
+async function loadPlaylist(playlistUrl) {
   const container = $('#loadingContainer');
   const bar = $('#loadingProgress');
   const status = $('#loadingStatus');
@@ -259,64 +252,26 @@ async function loadPlaylist(playlistUrl, token) {
     bar.style.width = '10%';
     $('#emptyState').hidden = true;
 
-    // Verify token and log which account is being used
-    const meRes = await fetch('https://api.spotify.com/v1/me', {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    if (!meRes.ok) throw new Error('Token inválido. Faça logout e login novamente.');
-    const me = await meRes.json();
-    console.log('Autenticado como:', me.display_name, '|', me.email, '| id:', me.id);
-
     const playlistId = extractPlaylistId(playlistUrl);
+
+    const res = await fetch(`/api/playlist/${playlistId}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Erro ${res.status}`);
+    }
+
+    const data = await res.json();
+    const tracks = data.tracks || [];
     let count = 0;
 
-    const addItems = (items) => {
-      for (const item of (items || [])) {
-        const track = item?.track;
-        if (!track?.id) continue;
-        if (state.songs[track.id]) continue;
-        const song = {
-          id: track.id,
-          title: track.name || 'Sem título',
-          artist: (track.artists || []).map(a => a.name).join(', ') || 'Desconhecido',
-          cover: track.album?.images?.[0]?.url || '',
-        };
-        state.songs[song.id] = song;
-        addSongToPool(song);
-        count++;
-        bar.style.width = Math.min(count * 0.5 + 10, 95) + '%';
-        status.textContent = `Carregadas ${count} músicas...`;
-        $('#poolCount').textContent = count;
-      }
-    };
-
-    // Fetch playlist name for display
-    const plRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name,tracks.total`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    if (!plRes.ok) {
-      const body = await plRes.json().catch(() => ({}));
-      console.error('Playlist error:', JSON.stringify(body));
-      throw new Error(`Spotify ${plRes.status}: ${JSON.stringify(body)}`);
-    }
-    const playlist = await plRes.json();
-    console.log('Playlist:', playlist.name, '| total:', playlist.tracks?.total);
-
-    // Fetch tracks via the dedicated /tracks endpoint (supports pagination, market param)
-    let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?market=from_token&limit=100`;
-    while (nextUrl) {
-      const res = await fetch(nextUrl, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        console.error('Tracks error:', JSON.stringify(body));
-        throw new Error(`Spotify ${res.status}: ${JSON.stringify(body)}`);
-      }
-      const data = await res.json();
-      console.log('Tracks page: items=', data.items?.length, 'next=', data.next);
-      addItems(data.items);
-      nextUrl = data.next || null;
+    for (const track of tracks) {
+      if (state.songs[track.id]) continue;
+      state.songs[track.id] = track;
+      addSongToPool(track);
+      count++;
+      bar.style.width = Math.min(count / Math.max(tracks.length, 1) * 90 + 10, 99) + '%';
+      status.textContent = `Carregadas ${count} músicas...`;
+      $('#poolCount').textContent = count;
     }
 
     bar.style.width = '100%';

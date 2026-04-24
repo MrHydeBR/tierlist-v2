@@ -2,7 +2,9 @@ import time
 import logging
 import json
 import spotipy
-from fastapi import FastAPI
+import httpx
+from bs4 import BeautifulSoup
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -106,5 +108,67 @@ def api_scrape(req: ScrapeRequest):
         scrape_spotify_generator(req.url, req.access_token),
         media_type="application/x-ndjson",
     )
+
+_EMBED_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
+def _parse_track(item: dict) -> dict | None:
+    track_id = item.get("id") or item.get("uri", "").split(":")[-1]
+    if not track_id:
+        return None
+    title = item.get("title") or item.get("name") or "Sem título"
+    subtitle = item.get("subtitle") or ""
+    artists = item.get("artists") or []
+    artist = subtitle or ", ".join(a.get("name", "") for a in artists) or "Desconhecido"
+    cover = item.get("imageUrl") or ""
+    if not cover and item.get("album", {}).get("images"):
+        cover = item["album"]["images"][0].get("url", "")
+    return {"id": track_id, "title": title, "artist": artist, "cover": cover}
+
+@app.get("/api/playlist/{playlist_id}")
+async def get_playlist(playlist_id: str):
+    url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
+            res = await client.get(url, headers=_EMBED_HEADERS)
+    except Exception as e:
+        raise HTTPException(502, f"Falha ao buscar embed do Spotify: {e}")
+
+    if res.status_code != 200:
+        raise HTTPException(res.status_code, f"Spotify embed retornou {res.status_code}")
+
+    soup = BeautifulSoup(res.text, "html.parser")
+    script = soup.find("script", {"id": "resource"})
+
+    if not script or not script.string:
+        logger.warning("Script#resource não encontrado. HTML preview: %s", res.text[:3000])
+        raise HTTPException(404, "Dados da playlist não encontrados no embed do Spotify.")
+
+    try:
+        data = json.loads(script.string)
+    except json.JSONDecodeError as e:
+        raise HTTPException(500, f"Erro ao parsear JSON do embed: {e}")
+
+    logger.info("Embed data keys: %s", list(data.keys()) if isinstance(data, dict) else type(data))
+
+    # Spotify has used at least two JSON shapes — try both
+    track_list = None
+    if isinstance(data, dict):
+        track_list = data.get("trackList")
+        if track_list is None:
+            entity = data.get("data", {}).get("entity", {})
+            track_list = entity.get("trackList") or entity.get("tracks", {}).get("items")
+
+    if track_list is None:
+        logger.warning("trackList não encontrado. Estrutura: %s", json.dumps(data)[:2000])
+        raise HTTPException(404, "Lista de músicas não encontrada nos dados do embed.")
+
+    tracks = [t for item in track_list if (t := _parse_track(item))]
+    playlist_name = data.get("name") or data.get("data", {}).get("entity", {}).get("name", "")
+    logger.info("Playlist '%s': %d músicas extraídas", playlist_name, len(tracks))
+
+    return {"name": playlist_name, "tracks": tracks}
 
 app.mount("/", StaticFiles(directory=".", html=True), name="static")

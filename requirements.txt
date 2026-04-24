@@ -4,3 +4,5 @@ pydantic
 python-multipart
 spotipy
 python-dotenv
+httpx
+beautifulsoup4
