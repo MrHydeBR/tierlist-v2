@@ -120,11 +120,10 @@ def scrape_spotify_generator(url: str, access_token: str):
                 offset += limit
             return # Sucesso total
         else:
-            raise Exception("Chaves do Spotify não carregadas ou inválidas")
             yield json.dumps({"status": "fallback", "reason": "Nenhuma autenticação oficial foi bem-sucedida.", "keys_found": bool(CLIENT_ID)}) + "\n"
 
     except Exception as e:
-        logger.exception(f"API Oficial falhou inesperadamente: {e}") 
+        logger.exception(f"API Oficial falhou inesperadamente: {e}")
         yield json.dumps({"status": "fallback", "reason": str(e), "keys_found": bool(CLIENT_ID)}) + "\n"
     
     # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) - Sempre executado se a API oficial não retornar ---
@@ -164,6 +163,28 @@ def api_scrape(req: ScrapeRequest):
         scrape_spotify_generator(req.url, req.access_token),
         media_type="application/x-ndjson",
     )
+
+def get_playlist_sync(playlist_id: str):
+    """Extração via scraper (embed) caso a API oficial falhe ou não tenha chaves."""
+    url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
+    res = httpx.get(url, headers=_EMBED_HEADERS, follow_redirects=True, timeout=20.0)
+    
+    if res.status_code != 200:
+        raise Exception(f"Spotify retornou status {res.status_code}")
+
+    soup = BeautifulSoup(res.text, "html.parser")
+    script = soup.find("script", {"id": "resource"}) or soup.find("script", {"id": "__NEXT_DATA__"})
+    if not script or not script.string:
+        raise Exception("Dados da playlist não encontrados no HTML")
+
+    data = json.loads(script.string)
+    if "props" in data: # Estrutura moderna __NEXT_DATA__
+        entity = data.get("props", {}).get("pageProps", {}).get("state", {}).get("data", {}).get("entity", {})
+        track_list = entity.get("trackList") or entity.get("tracks", {}).get("items") or []
+    else:
+        track_list = data.get("trackList") or []
+
+    return {"tracks": [t for item in track_list if (t := _parse_track(item))]}
 
 
 _EMBED_HEADERS = {
