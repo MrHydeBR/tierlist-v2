@@ -442,13 +442,16 @@ function addSongToContainer(track, container) {
   card.dataset.id = track.id;
 
   const img = document.createElement('img');
-  // Placeholder de alta qualidade se a capa for vazia
-  const placeholder = 'https://community.spotify.com/t5/image/serverpage/image-id/25294i2836511C333E6E85';
+  // Placeholder SVG seguro que não causa erro de CORS
+  const placeholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23282828"%3E%3Crect width="24" height="24"/%3E%3Cpath d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="%23555"/%3E%3C/svg%3E';
+
   img.loading = 'lazy';
   img.alt = escapeHtml(track.title);
 
-  // REGRA DE OURO: crossOrigin antes do src para evitar erro de Canvas sujo
-  img.setAttribute('crossorigin', 'anonymous');
+  // REGRA DE OURO: crossOrigin apenas para imagens externas para não quebrar o placeholder Data URI
+  if (track.cover && !track.cover.startsWith('data:')) {
+    img.setAttribute('crossorigin', 'anonymous');
+  }
   img.src = track.cover || placeholder;
 
   // Fallback se a imagem do Spotify falhar ou for bloqueada
