@@ -444,11 +444,11 @@ function addSongToContainer(track, container) {
   const img = document.createElement('img');
   // Placeholder de alta qualidade se a capa for vazia
   const placeholder = 'https://community.spotify.com/t5/image/serverpage/image-id/25294i2836511C333E6E85';
-  img.src = track.cover || placeholder;
   img.alt = escapeHtml(track.title);
   img.loading = 'lazy';
-  // Configuração crítica para CORS e html2canvas (PNG Export)
-  img.setAttribute('crossorigin', 'anonymous');
+
+  // Configuração crítica: o crossorigin DEVE vir antes do src
+  img.crossOrigin = "anonymous";
   img.src = track.cover || placeholder;
 
   // Fallback se a imagem do Spotify falhar ou for bloqueada

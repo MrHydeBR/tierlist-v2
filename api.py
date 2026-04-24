@@ -76,10 +76,9 @@ def scrape_spotify_generator(url: str, access_token: str):
     # --- TENTATIVA 1: API OFICIAL (Estável e com Capas) ---
     try:
         yield json.dumps({"status": "connected", "method": "official"}) + "\n"
-        
         sp = None
-        # 1. Tenta usar o token do usuário (PKCE do frontend)
-        if access_token and len(access_token) > 20:
+        # 1. Tenta usar o token do usuário (se fornecido)
+        if access_token and len(str(access_token)) > 20:
             sp = spotipy.Spotify(auth=access_token)
             try:
                 sp.me() # Teste rápido de token
@@ -87,29 +86,26 @@ def scrape_spotify_generator(url: str, access_token: str):
                 logger.warning(f"Token de usuário falhou ({e}). Tentando Client Credentials...")
                 sp = None
         
-        # 2. Fallback para Client Credentials (ID/Secret do Render)
+        # 2. Força Client Credentials se o anterior falhou
         if sp is None and CLIENT_ID and CLIENT_SECRET:
             try:
                 from spotipy.oauth2 import SpotifyClientCredentials
                 auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
                 sp = spotipy.Spotify(auth_manager=auth_manager)
-                # Força a obtenção do token para validar as chaves agora
-                auth_manager.get_access_token(as_dict=False)
-                logger.info("Autenticação Client Credentials confirmada.")
             except Exception as auth_err:
                 logger.error(f"Falha no Client Credentials: {auth_err}")
                 sp = None
 
         if sp:
-            logger.info(f"Iniciando busca oficial para {playlist_id}")
-            pl_info = sp.playlist(playlist_id, fields="tracks.total")
-            total = pl_info.get('tracks', {}).get('total', 0) if pl_info else 0
+            # Puxa o total e os itens
+            pl_info = sp.playlist(playlist_id, fields="name,tracks.total")
+            total = pl_info.get('tracks', {}).get('total', 0)
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
             offset = 0
             limit = 100
             while True:
-                page = sp.playlist_items(playlist_id, limit=limit, offset=offset) # additional_types is not needed here
+                page = sp.playlist_items(playlist_id, limit=limit, offset=offset)
                 items = page.get('items', [])
                 if not items: break
                 
@@ -119,11 +115,12 @@ def scrape_spotify_generator(url: str, access_token: str):
                         yield json.dumps(data) + "\n"
                         time.sleep(0.01)
                 
-                if not page.get('next'): break # Se não há mais páginas, sai do loop
+                # Se não há 'next' ou processamos tudo, para
+                if not page.get('next') or len(items) < limit: break
                 offset += limit
-            return # Sucesso com API oficial
+            return # Sucesso total
         else:
-            logger.warning("Nenhuma autenticação oficial (usuário ou Client Credentials) foi bem-sucedida. Caindo para o Scraper.")
+            raise Exception("Chaves do Spotify não carregadas ou inválidas")
             yield json.dumps({"status": "fallback", "reason": "Nenhuma autenticação oficial foi bem-sucedida.", "keys_found": bool(CLIENT_ID)}) + "\n"
 
     except Exception as e:
