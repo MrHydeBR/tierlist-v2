@@ -256,24 +256,19 @@ async function loadPlaylist(playlistUrl, token) {
     bar.style.width = '10%';
     $('#emptyState').hidden = true;
 
+    // Verify token and log which account is being used
+    const meRes = await fetch('https://api.spotify.com/v1/me', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!meRes.ok) throw new Error('Token inválido. Faça logout e login novamente.');
+    const me = await meRes.json();
+    console.log('Autenticado como:', me.display_name, '|', me.email, '| id:', me.id);
+
     const playlistId = extractPlaylistId(playlistUrl);
     let count = 0;
-    let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
 
-    while (nextUrl) {
-      const res = await fetch(nextUrl, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        console.error('Spotify error body:', JSON.stringify(body));
-        throw new Error(`Spotify ${res.status}: ${JSON.stringify(body)}`);
-      }
-
-      const data = await res.json();
-
-      for (const item of (data.items || [])) {
+    const addItems = (items) => {
+      for (const item of (items || [])) {
         const track = item?.track;
         if (!track?.id) continue;
         if (state.songs[track.id]) continue;
@@ -290,7 +285,34 @@ async function loadPlaylist(playlistUrl, token) {
         status.textContent = `Carregadas ${count} músicas...`;
         $('#poolCount').textContent = count;
       }
+    };
 
+    // Use main playlist endpoint (avoids /tracks sub-endpoint which may be restricted)
+    const plRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!plRes.ok) {
+      const body = await plRes.json().catch(() => ({}));
+      console.error('Playlist error:', JSON.stringify(body));
+      throw new Error(`Spotify ${plRes.status}: ${JSON.stringify(body)}`);
+    }
+    const playlist = await plRes.json();
+    console.log('Playlist:', playlist.name, '| total:', playlist.tracks?.total);
+    addItems(playlist.tracks?.items);
+
+    // Paginate remaining pages (next points back to /tracks endpoint)
+    let nextUrl = playlist.tracks?.next;
+    while (nextUrl) {
+      const res = await fetch(nextUrl, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error('Pagination error:', JSON.stringify(body));
+        break;
+      }
+      const data = await res.json();
+      addItems(data.items);
       nextUrl = data.next || null;
     }
 
