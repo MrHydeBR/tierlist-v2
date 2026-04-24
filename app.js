@@ -453,14 +453,17 @@ function addSongToContainer(track, container) {
   card.dataset.id = track.id;
 
   const img = document.createElement('img');
-  img.src = track.cover || 'https://community.spotify.com/t5/image/serverpage/image-id/25294i2836511C333E6E85'; // Capa padrão se vazio
+  // Placeholder de alta qualidade se a capa for vazia
+  const placeholder = 'https://community.spotify.com/t5/image/serverpage/image-id/25294i2836511C333E6E85';
+  img.src = track.cover || placeholder;
   img.alt = escapeHtml(track.title);
   img.loading = 'lazy';
-  img.crossOrigin = 'anonymous'; // Essencial para CORS e Exportação
+  // Configuração crítica para html2canvas (PNG Export)
+  img.setAttribute('crossorigin', 'anonymous');
 
   // Fallback se a imagem do Spotify falhar ou for bloqueada
   img.onerror = () => {
-    img.src = 'https://community.spotify.com/t5/image/serverpage/image-id/25294i2836511C333E6E85';
+    if (img.src !== placeholder) img.src = placeholder;
   };
 
   const tooltip = document.createElement('div');

@@ -55,10 +55,15 @@ def process_item(item):
     # Busca robusta pela capa
     cover = None
     album = track.get('album', {})
-    images = album.get('images', [])
+    # Às vezes as imagens estão no álbum, às vezes na própria track
+    images = album.get('images', []) or track.get('images', [])
+    
     if images:
-        # Tenta pegar a imagem de tamanho médio (índice 1) ou a maior (0)
-        cover = images[1]['url'] if len(images) > 1 else images[0]['url']
+        # Tenta pegar a melhor imagem disponível
+        for img in images:
+            if img.get('url'):
+                cover = img['url']
+                break
     
     if not cover:
         cover = "" # Fallback para string vazia
@@ -100,15 +105,15 @@ def scrape_spotify_generator(url: str, access_token: str):
                 logger.error(f"Falha ao configurar Client Credentials: {auth_err}")
 
         if sp:
-            # Removemos o filtro de fields para evitar erros de estrutura
-            pl_info = sp.playlist(playlist_id)
-            total = pl_info.get('tracks', {}).get('total', 0)
+            # Pega o total de músicas primeiro
+            pl_info = sp.playlist(playlist_id, fields="tracks.total")
+            total = pl_info.get('tracks', {}).get('total', 0) if pl_info else 0
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
             offset = 0
             limit = 100
             while True:
-                page = sp.playlist_items(playlist_id, limit=limit, offset=offset)
+                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, additional_types=['track'])
                 items = page.get('items', [])
                 if not items: break
                 
@@ -118,7 +123,8 @@ def scrape_spotify_generator(url: str, access_token: str):
                         yield json.dumps(data) + "\n"
                         time.sleep(0.01)
                 
-                if not page.get('next'): break
+                # Spotify Pagination: Se retornou menos que o limit, acabou
+                if len(items) < limit or not page.get('next'): break
                 offset += limit
             return # Sucesso com API oficial
         else:
