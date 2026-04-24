@@ -160,14 +160,16 @@ def scrape_spotify_generator(url: str, access_token: str):
 
         if sp:
             logger.info(f"Iniciando busca oficial para {playlist_id}")
-            pl_info = sp.playlist(playlist_id, fields="tracks.total")
+            # Pega o total de músicas
+            pl_info = sp.playlist(playlist_id, fields="tracks.total,name")
             total = pl_info.get('tracks', {}).get('total', 0) if pl_info else 0
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
             offset = 0
             limit = 100
             while True:
-                page = sp.playlist_items(playlist_id, limit=limit, offset=offset) # Removido additional_types
+                # Solução para o 403: Especificamos apenas os campos de TRACK, ignorando episódios
+                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, fields="items(track(id,name,artists,album(images))),next")
                 items = page.get('items', [])
                 if not items: break
                 
@@ -177,7 +179,7 @@ def scrape_spotify_generator(url: str, access_token: str):
                         yield json.dumps(data) + "\n"
                         time.sleep(0.01)
                 
-                if not page.get('next'): break
+                if not page.get('next') or len(items) < limit: break
                 offset += limit
             return
         else:
