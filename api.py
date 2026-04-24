@@ -70,6 +70,68 @@ def process_item(item):
         
     return {"id": track_id, "title": title, "artist": artist, "cover": cover}
 
+
+_EMBED_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
+def _parse_track(item: dict) -> dict | None:
+    # Handle new structure (uri, title, subtitle)
+    uri = item.get("uri", "")
+    track_id = item.get("id") or (uri.split(":")[-1] if ":" in uri else uri)
+    if not track_id:
+        return None
+    
+    title = item.get("title") or item.get("name") or "Sem título"
+    subtitle = item.get("subtitle") or ""
+    artists = item.get("artists") or []
+    artist = subtitle or ", ".join(a.get("name", "") for a in artists) or "Desconhecido"
+    
+    # Busca exaustiva pela capa no JSON do Embed
+    cover = item.get("imageUrl")
+    
+    # Spotify 2025: Estrutura aninhada em 'image', 'images' ou 'coverArt'
+    img_fields = ["image", "images", "coverArt", "album"]
+    for field in img_fields:
+        if cover: break
+        img_data = item.get(field)
+        if not img_data: continue
+        
+        if field == "album" and isinstance(img_data, dict):
+            img_data = img_data.get("images", [])
+
+        if isinstance(img_data, list) and len(img_data) > 0:
+            cover = img_data[0].get("url") or img_data[0].get("sources", [{}])[0].get("url")
+        elif isinstance(img_data, dict):
+            cover = img_data.get("url") or img_data.get("sources", [{}])[0].get("url")
+
+    if not cover and "album" in item:
+        imgs = item["album"].get("images", [])
+        if imgs: cover = imgs[0].get("url")
+            
+    return {"id": track_id, "title": title, "artist": artist, "cover": cover or ""}
+
+def get_playlist_sync(playlist_id: str):
+    """Extração via scraper (embed) caso a API oficial falhe ou não tenha chaves."""
+    url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
+    res = httpx.get(url, headers=_EMBED_HEADERS, follow_redirects=True, timeout=20.0)
+    
+    if res.status_code != 200:
+        raise Exception(f"Spotify embed retornou {res.status_code}")
+
+    soup = BeautifulSoup(res.text, "html.parser")
+    script = soup.find("script", {"id": "resource"}) or soup.find("script", {"id": "__NEXT_DATA__"})
+
+    if not script or not script.string:
+        logger.warning("Script de dados não encontrado. HTML preview: %s", res.text[:3000])
+        raise HTTPException(404, "Dados da playlist não encontrados no embed do Spotify.")
+
+    data = json.loads(script.string)
+    # A função _parse_track já lida com as diferentes estruturas
+    track_list = data.get("props", {}).get("pageProps", {}).get("state", {}).get("data", {}).get("entity", {}).get("trackList") or data.get("trackList") or []
+    return {"tracks": [t for item in track_list if (t := _parse_track(item))]}
+
 def scrape_spotify_generator(url: str, access_token: str):
     playlist_id = extract_playlist_id(url)
     
@@ -106,7 +168,7 @@ def scrape_spotify_generator(url: str, access_token: str):
             total = pl_info.get('tracks', {}).get('total', 0) if pl_info else 0
             yield json.dumps({"status": "searching", "total": total}) + "\n"
 
-            offset = 0
+            offset = 0 # Inicia o offset para paginação
             limit = 100
             while True:
                 page = sp.playlist_items(playlist_id, limit=limit, offset=offset, additional_types=['track'])
@@ -120,7 +182,7 @@ def scrape_spotify_generator(url: str, access_token: str):
                         time.sleep(0.01)
                 
                 if len(items) < limit or not page.get('next'): break
-                offset += limit
+                offset += limit # Incrementa o offset para a próxima página
             return # Sucesso com API oficial
         else:
             raise Exception("Credenciais inválidas ou ausentes para API Oficial")
