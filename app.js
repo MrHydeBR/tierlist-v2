@@ -11,10 +11,172 @@ const DEFAULT_TIERS = [
 
 const state = { songs: {} };
 
-document.addEventListener('DOMContentLoaded', () => {
+// =========================================================
+// Spotify PKCE Auth
+// =========================================================
+const CLIENT_ID = '1088c40fd007430eb1d224267f41c2c6';
+const SCOPES = 'playlist-read-private playlist-read-collaborative';
+
+function redirectUri() {
+  return window.location.origin;
+}
+
+function b64url(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function generateVerifier() {
+  return b64url(crypto.getRandomValues(new Uint8Array(64)));
+}
+
+async function generateChallenge(verifier) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return b64url(hash);
+}
+
+async function redirectToSpotify() {
+  const verifier = generateVerifier();
+  const challenge = await generateChallenge(verifier);
+  const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
+
+  sessionStorage.setItem('pkce_verifier', verifier);
+  sessionStorage.setItem('pkce_state', state);
+
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: redirectUri(),
+    scope: SCOPES,
+    state,
+    code_challenge_method: 'S256',
+    code_challenge: challenge,
+  });
+
+  window.location.href = 'https://accounts.spotify.com/authorize?' + params;
+}
+
+async function handleCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const returnedState = params.get('state');
+
+  if (!code) return false;
+
+  const storedState = sessionStorage.getItem('pkce_state');
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  sessionStorage.removeItem('pkce_state');
+  sessionStorage.removeItem('pkce_verifier');
+
+  history.replaceState({}, '', '/');
+
+  if (returnedState !== storedState || !verifier) {
+    showToast('Erro de autenticação. Tente novamente.');
+    return false;
+  }
+
+  try {
+    const res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri(),
+        client_id: CLIENT_ID,
+        code_verifier: verifier,
+      }),
+    });
+
+    if (!res.ok) throw new Error('Falha ao trocar código por token');
+
+    const data = await res.json();
+    localStorage.setItem('spotify_token', data.access_token);
+    localStorage.setItem('spotify_token_expiry', Date.now() + data.expires_in * 1000);
+    if (data.refresh_token) {
+      localStorage.setItem('spotify_refresh_token', data.refresh_token);
+    }
+    return true;
+  } catch (err) {
+    showToast('Erro ao autenticar: ' + err.message);
+    return false;
+  }
+}
+
+async function refreshToken() {
+  const refreshTk = localStorage.getItem('spotify_refresh_token');
+  if (!refreshTk) return null;
+
+  try {
+    const res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshTk,
+        client_id: CLIENT_ID,
+      }),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    localStorage.setItem('spotify_token', data.access_token);
+    localStorage.setItem('spotify_token_expiry', Date.now() + data.expires_in * 1000);
+    if (data.refresh_token) {
+      localStorage.setItem('spotify_refresh_token', data.refresh_token);
+    }
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
+async function getToken() {
+  const token = localStorage.getItem('spotify_token');
+  const expiry = parseInt(localStorage.getItem('spotify_token_expiry') || '0');
+
+  if (token && Date.now() < expiry - 60_000) return token;
+
+  return await refreshToken();
+}
+
+function logout() {
+  localStorage.removeItem('spotify_token');
+  localStorage.removeItem('spotify_token_expiry');
+  localStorage.removeItem('spotify_refresh_token');
+  updateAuthUI();
+}
+
+function updateAuthUI() {
+  const btn = $('#btnSpotifyAuth');
+  if (!btn) return;
+  const token = localStorage.getItem('spotify_token');
+  const expiry = parseInt(localStorage.getItem('spotify_token_expiry') || '0');
+  const loggedIn = token && Date.now() < expiry;
+
+  if (loggedIn) {
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg> Desconectar`;
+    btn.className = 'btn-ghost';
+    btn.onclick = logout;
+  } else {
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg> Conectar ao Spotify`;
+    btn.className = 'btn-primary';
+    btn.onclick = redirectToSpotify;
+  }
+}
+
+// =========================================================
+// App
+// =========================================================
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const authed = await handleCallback();
   initTiers();
   initEventListeners();
   initDragAndDrop();
+  updateAuthUI();
+  if (authed) showToast('Conectado ao Spotify!');
 });
 
 function initTiers() {
@@ -33,10 +195,17 @@ function initTiers() {
 }
 
 function initEventListeners() {
-  $('#btnLoadPlaylist').onclick = () => {
+  $('#btnLoadPlaylist').onclick = async () => {
     const url = $('#playlistUrl').value.trim();
-    if (url) loadPlaylist(url);
-    else showToast('Por favor, cole um link do Spotify');
+    if (!url) { showToast('Por favor, cole um link do Spotify'); return; }
+
+    const token = await getToken();
+    if (!token) {
+      showToast('Conecte ao Spotify primeiro');
+      return;
+    }
+
+    loadPlaylist(url, token);
   };
 
   $('#playlistUrl').onkeypress = (e) => {
@@ -69,7 +238,7 @@ function updatePoolCount() {
   $('#poolCount').textContent = $('#pool').querySelectorAll('.song').length;
 }
 
-async function loadPlaylist(playlistUrl) {
+async function loadPlaylist(playlistUrl, token) {
   const container = $('#loadingContainer');
   const bar = $('#loadingProgress');
   const status = $('#loadingStatus');
@@ -85,7 +254,7 @@ async function loadPlaylist(playlistUrl) {
     const response = await fetch('/api/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: playlistUrl }),
+      body: JSON.stringify({ url: playlistUrl, access_token: token }),
     });
 
     if (!response.ok) throw new Error('Erro ao conectar com o servidor');
@@ -125,9 +294,7 @@ async function loadPlaylist(playlistUrl) {
             $('#poolCount').textContent = count;
           }
         } catch (e) {
-          if (e.message && !e.message.startsWith('Unexpected')) {
-            throw e;
-          }
+          if (e.message && !e.message.startsWith('Unexpected')) throw e;
         }
       }
     }

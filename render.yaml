@@ -7,7 +7,3 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
-      - key: SPOTIFY_CLIENT_ID
-        sync: false
-      - key: SPOTIFY_CLIENT_SECRET
-        sync: false
