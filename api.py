@@ -115,16 +115,28 @@ _EMBED_HEADERS = {
 }
 
 def _parse_track(item: dict) -> dict | None:
-    track_id = item.get("id") or item.get("uri", "").split(":")[-1]
+    # Handle new structure (uri, title, subtitle)
+    uri = item.get("uri", "")
+    track_id = item.get("id") or (uri.split(":")[-1] if ":" in uri else uri)
     if not track_id:
         return None
+    
     title = item.get("title") or item.get("name") or "Sem título"
     subtitle = item.get("subtitle") or ""
     artists = item.get("artists") or []
     artist = subtitle or ", ".join(a.get("name", "") for a in artists) or "Desconhecido"
+    
+    # Cover art (if available)
     cover = item.get("imageUrl") or ""
     if not cover and item.get("album", {}).get("images"):
         cover = item["album"]["images"][0].get("url", "")
+    
+    # If still no cover, check for 'image' field in new structure
+    if not cover and item.get("image"):
+        images = item["image"]
+        if isinstance(images, list) and len(images) > 0:
+            cover = images[0].get("url", "")
+            
     return {"id": track_id, "title": title, "artist": artist, "cover": cover}
 
 @app.get("/api/playlist/{playlist_id}")
@@ -140,10 +152,11 @@ async def get_playlist(playlist_id: str):
         raise HTTPException(res.status_code, f"Spotify embed retornou {res.status_code}")
 
     soup = BeautifulSoup(res.text, "html.parser")
-    script = soup.find("script", {"id": "resource"})
+    # Spotify now uses __NEXT_DATA__ for the JSON payload
+    script = soup.find("script", {"id": "resource"}) or soup.find("script", {"id": "__NEXT_DATA__"})
 
     if not script or not script.string:
-        logger.warning("Script#resource não encontrado. HTML preview: %s", res.text[:3000])
+        logger.warning("Script de dados não encontrado. HTML preview: %s", res.text[:3000])
         raise HTTPException(404, "Dados da playlist não encontrados no embed do Spotify.")
 
     try:
@@ -151,22 +164,34 @@ async def get_playlist(playlist_id: str):
     except json.JSONDecodeError as e:
         raise HTTPException(500, f"Erro ao parsear JSON do embed: {e}")
 
-    logger.info("Embed data keys: %s", list(data.keys()) if isinstance(data, dict) else type(data))
-
-    # Spotify has used at least two JSON shapes — try both
+    # Try different possible locations for the track list
     track_list = None
+    playlist_name = ""
+
     if isinstance(data, dict):
-        track_list = data.get("trackList")
+        # 1. Newest structure (__NEXT_DATA__)
+        state = data.get("props", {}).get("pageProps", {}).get("state", {})
+        entity = state.get("data", {}).get("entity", {})
+        if entity:
+            track_list = entity.get("trackList")
+            playlist_name = entity.get("name") or entity.get("title") or ""
+        
+        # 2. Previous structure (direct trackList)
+        if track_list is None:
+            track_list = data.get("trackList")
+            playlist_name = data.get("name") or playlist_name
+            
+        # 3. Alternative structure (data.entity)
         if track_list is None:
             entity = data.get("data", {}).get("entity", {})
             track_list = entity.get("trackList") or entity.get("tracks", {}).get("items")
+            playlist_name = entity.get("name") or playlist_name
 
     if track_list is None:
-        logger.warning("trackList não encontrado. Estrutura: %s", json.dumps(data)[:2000])
+        logger.warning("Lista de músicas não encontrada. Estrutura: %s", json.dumps(data)[:2000])
         raise HTTPException(404, "Lista de músicas não encontrada nos dados do embed.")
 
     tracks = [t for item in track_list if (t := _parse_track(item))]
-    playlist_name = data.get("name") or data.get("data", {}).get("entity", {}).get("name", "")
     logger.info("Playlist '%s': %d músicas extraídas", playlist_name, len(tracks))
 
     return {"name": playlist_name, "tracks": tracks}
