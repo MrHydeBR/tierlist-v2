@@ -262,7 +262,7 @@ function loadStateFromUrl() {
     // Rebuild Tiers
     const board = $('#tierBoard');
     board.innerHTML = '';
-    data.tiers.forEach((t, i) => {
+    (data.tiers || []).forEach((t, i) => {
       const row = document.createElement('div');
       row.className = 'tier-row';
       row.innerHTML = `
@@ -270,14 +270,14 @@ function loadStateFromUrl() {
         <div class="tier-drop" id="tier-custom-${i}"></div>
       `;
       board.appendChild(row);
-      t.songIds.forEach(id => {
+      (t.songIds || []).forEach(id => {
         if (state.songs[id]) addSongToContainer(state.songs[id], row.querySelector('.tier-drop'));
       });
     });
 
     // Rebuild Pool
     $('#pool').innerHTML = '';
-    data.poolIds.forEach(id => {
+    (data.poolIds || []).forEach(id => {
       if (state.songs[id]) addSongToPool(state.songs[id]);
     });
 
@@ -347,7 +347,48 @@ async function loadPlaylist(playlistUrl) {
     const playlistId = extractPlaylistId(playlistUrl);
     const token = await getToken();
 
-    console.log('Iniciando importação via Backend (API Oficial com fallback para Scraper)...');
+    // --- NOVA ABORDAGEM: Tentar busca DIRETA no navegador primeiro ---
+    if (token) {
+      try {
+        console.log('Tentando busca direta via Navegador (Token de Usuário)...');
+        status.textContent = 'Acessando Spotify diretamente...';
+
+        let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50`;
+        let allTracks = [];
+
+        while (nextUrl) {
+          const spRes = await fetch(nextUrl, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+
+          if (!spRes.ok) throw new Error('Falha na API direta');
+
+          const page = await spRes.json();
+          const tracks = page.items.map(it => {
+            const t = it.track;
+            return {
+              id: t.id || `t-${Math.random()}`,
+              title: t.name,
+              artist: t.artists.map(a => a.name).join(', '),
+              cover: t.album.images[0]?.url || ''
+            };
+          });
+
+          processTracks(tracks);
+          allTracks = allTracks.concat(tracks);
+          nextUrl = page.next;
+          bar.style.width = '60%';
+        }
+
+        finishLoading(allTracks.length);
+        return; // Sucesso absoluto, interrompe o resto
+      } catch (directErr) {
+        console.warn('Busca direta falhou, tentando via Backend...', directErr);
+      }
+    }
+
+    // --- FALLBACK: Usar o Backend (API Oficial ou Scraper) ---
+    console.log('Iniciando importação via Backend...');
     const res = await fetch('/api/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -361,16 +402,23 @@ async function loadPlaylist(playlistUrl) {
 
     // Processamento de Stream (NDJSON - Backend decide se é API Oficial ou Scraper)
     await processStream(res);
+    finishLoading();
 
-    bar.style.width = '100%';
-    status.textContent = 'Pronto! Músicas importadas.';
-    setTimeout(() => { container.hidden = true; }, 2500);
   } catch (err) {
     showToast('Erro: ' + err.message);
     status.textContent = 'Falha ao carregar.';
   } finally {
     btn.disabled = false;
   }
+}
+
+function finishLoading(count) {
+  const container = $('#loadingContainer');
+  const bar = $('#loadingProgress');
+  const status = $('#loadingStatus');
+  bar.style.width = '100%';
+  status.textContent = `Pronto! ${count || ''} músicas importadas.`;
+  setTimeout(() => { container.hidden = true; }, 2500);
 }
 
 async function processStream(res) {

@@ -70,6 +70,80 @@ def process_item(item):
         
     return {"id": track_id, "title": title, "artist": artist, "cover": cover}
 
+def scrape_spotify_generator(url: str, access_token: str):
+    playlist_id = extract_playlist_id(url)
+    
+    # --- TENTATIVA 1: API OFICIAL (Estável e com Capas) ---
+    try:
+        yield json.dumps({"status": "connected", "method": "official"}) + "\n"
+        sp = None
+        # 1. Tenta usar o token do usuário (se fornecido)
+        if access_token and len(str(access_token)) > 20:
+            sp = spotipy.Spotify(auth=access_token)
+            try:
+                sp.me() # Teste rápido de token
+            except Exception as e:
+                logger.warning(f"Token de usuário falhou ({e}). Tentando Client Credentials...")
+                sp = None
+        
+        # 2. Força Client Credentials se o anterior falhou
+        if sp is None and CLIENT_ID and CLIENT_SECRET:
+            try:
+                from spotipy.oauth2 import SpotifyClientCredentials
+                auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
+                sp = spotipy.Spotify(auth_manager=auth_manager)
+            except Exception as auth_err:
+                logger.error(f"Falha no Client Credentials: {auth_err}")
+                sp = None
+
+        if sp:
+            logger.info(f"Backend: Iniciando busca oficial para {playlist_id}")
+            # Evitamos chamar sp.playlist() e vamos direto para os itens, que é mais estável
+            total_meta = sp.playlist_items(playlist_id, fields="total", limit=1)
+            total = total_meta.get('total', 0)
+            yield json.dumps({"status": "searching", "total": total}) + "\n"
+
+            offset = 0
+            limit = 100
+            while True:
+                # Solução para 403: Forçar apenas tracks e remover fields problemáticos
+                page = sp.playlist_items(playlist_id, limit=limit, offset=offset, additional_types=['track'])
+                items = page.get('items', [])
+                if not items: break
+                
+                for item in items:
+                    data = process_item(item)
+                    if data:
+                        yield json.dumps(data) + "\n"
+                        time.sleep(0.01)
+                
+                # Spotify Pagination: verifica se há próxima página
+                if not page.get('next'): break
+                offset += limit
+            return 
+        else:
+            raise Exception("Credenciais ausentes")
+
+    except Exception as e:
+        logger.warning(f"API Oficial falhou ({e}). Usando Scraper.")
+        yield json.dumps({"status": "fallback", "reason": str(e), "keys_found": bool(CLIENT_ID)}) + "\n"
+    
+    # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) - Sempre executado se a API oficial não retornar ---
+    try:
+        playlist_data = get_playlist_sync(playlist_id)
+        for track in playlist_data.get("tracks", []):
+            yield json.dumps(track) + "\n"
+    except Exception as e:
+        logger.error(f"Scraper de Embed falhou: {e}")
+        yield json.dumps({"error": f"Não foi possível carregar a playlist via scraper: {str(e)}"}) + "\n"
+
+@app.post("/api/scrape")
+def api_scrape(req: ScrapeRequest):
+    return StreamingResponse(
+        scrape_spotify_generator(req.url, req.access_token),
+        media_type="application/x-ndjson",
+    )
+
 
 _EMBED_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -99,7 +173,7 @@ def _parse_track(item: dict) -> dict | None:
         if not img_data: continue
         
         if field == "album" and isinstance(img_data, dict):
-            img_data = img_data.get("images", [])
+            img_data = img_data.get("images", []) # Tenta buscar imagens dentro do objeto 'album'
 
         if isinstance(img_data, list) and len(img_data) > 0:
             cover = img_data[0].get("url") or img_data[0].get("sources", [{}])[0].get("url")
@@ -111,100 +185,4 @@ def _parse_track(item: dict) -> dict | None:
         if imgs: cover = imgs[0].get("url")
             
     return {"id": track_id, "title": title, "artist": artist, "cover": cover or ""}
-
-def get_playlist_sync(playlist_id: str):
-    """Extração via scraper (embed) caso a API oficial falhe ou não tenha chaves."""
-    url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
-    res = httpx.get(url, headers=_EMBED_HEADERS, follow_redirects=True, timeout=20.0)
-    
-    if res.status_code != 200:
-        raise Exception(f"Spotify embed retornou {res.status_code}")
-
-    soup = BeautifulSoup(res.text, "html.parser")
-    script = soup.find("script", {"id": "resource"}) or soup.find("script", {"id": "__NEXT_DATA__"})
-
-    if not script or not script.string:
-        logger.warning("Script de dados não encontrado. HTML preview: %s", res.text[:3000])
-        raise HTTPException(404, "Dados da playlist não encontrados no embed do Spotify.")
-
-    data = json.loads(script.string)
-    # A função _parse_track já lida com as diferentes estruturas
-    track_list = data.get("props", {}).get("pageProps", {}).get("state", {}).get("data", {}).get("entity", {}).get("trackList") or data.get("trackList") or []
-    return {"tracks": [t for item in track_list if (t := _parse_track(item))]}
-
-def scrape_spotify_generator(url: str, access_token: str):
-    playlist_id = extract_playlist_id(url)
-    
-    # --- TENTATIVA 1: API OFICIAL (Estável e com Capas) ---
-    try:
-        yield json.dumps({"status": "connected", "method": "official"}) + "\n"
-        sp = None
-        # 1. Tenta usar o token do usuário (se logado)
-        if access_token and len(str(access_token)) > 20:
-            sp = spotipy.Spotify(auth=access_token)
-            try:
-                sp.me() # Teste rápido de token
-            except Exception as e:
-                logger.warning(f"Token de usuário falhou ({e}). Tentando Client Credentials...")
-                sp = None
-        
-        # 2. Fallback para Client Credentials (ID/Secret no Render)
-        if sp is None and CLIENT_ID and CLIENT_SECRET:
-            try:
-                from spotipy.oauth2 import SpotifyClientCredentials
-                auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
-                sp = spotipy.Spotify(auth_manager=auth_manager)
-            except Exception as auth_err:
-                logger.error(f"Falha no Client Credentials: {auth_err}")
-                sp = None
-
-        if sp:
-            logger.info(f"Iniciando busca oficial para {playlist_id}")
-            # Pega informações básicas da playlist
-            pl_info = sp.playlist(playlist_id)
-            total = pl_info.get('tracks', {}).get('total', 0) if pl_info else 0
-            yield json.dumps({"status": "searching", "total": total}) + "\n"
-
-            offset = 0
-            limit = 100
-            while True:
-                # Usamos playlist_tracks que é mais estável para evitar o campo 'episode'
-                # que causa o erro 403 em algumas contas/playlists.
-                page = sp.playlist_tracks(playlist_id, limit=limit, offset=offset)
-                items = page.get('items', [])
-                if not items: break
-                
-                for item in items:
-                    data = process_item(item)
-                    if data:
-                        yield json.dumps(data) + "\n"
-                        time.sleep(0.01)
-                
-                # Paginação: se não houver próxima página ou vier menos que o limite, paramos.
-                if not page.get('next') or len(items) < limit: break
-                offset += limit # Incrementa o offset para a próxima página
-            return
-        else:
-            raise Exception("Autenticação Spotify falhou (sem token de usuário ou Client Credentials)")
-
-    except Exception as e:
-        logger.warning(f"API Oficial falhou ({e}). Usando modo Scraper.")
-        yield json.dumps({"status": "fallback", "reason": str(e), "keys_found": bool(CLIENT_ID)}) + "\n"
-
-    # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback) ---
-    try:
-        playlist_data = get_playlist_sync(playlist_id)
-        for track in playlist_data.get("tracks", []):
-            yield json.dumps(track) + "\n"
-    except Exception as e:
-        logger.error(f"Fallback falhou: {e}")
-        yield json.dumps({"error": f"Erro crítico: {str(e)}"}) + "\n"
-
-@app.post("/api/scrape")
-def api_scrape(req: ScrapeRequest):
-    return StreamingResponse(
-        scrape_spotify_generator(req.url, req.access_token),
-        media_type="application/x-ndjson",
-    )
-
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
