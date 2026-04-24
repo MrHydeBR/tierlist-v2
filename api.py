@@ -170,13 +170,16 @@ def _parse_track(item: dict) -> dict | None:
     # Busca exaustiva pela capa no JSON do Embed
     cover = item.get("imageUrl")
     
-    # Spotify 2024/2025: As imagens agora podem estar em 'image', 'images' ou 'coverArt'
-    img_fields = ["image", "images", "coverArt"]
+    # Spotify 2025: Estrutura aninhada em 'image', 'images' ou 'coverArt'
+    img_fields = ["image", "images", "coverArt", "album"]
     for field in img_fields:
         if cover: break
         img_data = item.get(field)
         if not img_data: continue
         
+        if field == "album" and isinstance(img_data, dict):
+            img_data = img_data.get("images", [])
+
         if isinstance(img_data, list) and len(img_data) > 0:
             cover = img_data[0].get("url") or img_data[0].get("sources", [{}])[0].get("url")
         elif isinstance(img_data, dict):

@@ -458,7 +458,7 @@ function addSongToContainer(track, container) {
   img.loading = 'lazy';
   img.crossOrigin = 'anonymous'; // Essencial para CORS e Exportação
 
-  // Fallback se a imagem do Spotify falhar (CORS ou 404)
+  // Fallback se a imagem do Spotify falhar ou for bloqueada
   img.onerror = () => {
     img.src = 'https://community.spotify.com/t5/image/serverpage/image-id/25294i2836511C333E6E85';
   };
