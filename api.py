@@ -132,12 +132,34 @@ def scrape_spotify_generator(url: str, access_token: str):
     
     # --- TENTATIVA 2: SCRAPER DE EMBED (Fallback de Emergência) - Sempre executado se a API oficial não retornar ---
     try:
-        playlist_data = get_playlist_sync(playlist_id) # get_playlist_sync é síncrono
+        playlist_data = get_playlist_sync(playlist_id)
         for track in playlist_data.get("tracks", []):
             yield json.dumps(track) + "\n"
     except Exception as e:
         logger.error(f"Scraper de Embed falhou: {e}")
         yield json.dumps({"error": f"Não foi possível carregar a playlist via scraper: {str(e)}"}) + "\n"
+
+def get_playlist_sync(playlist_id: str):
+    """Extração via scraper (embed) caso a API oficial falhe ou não tenha chaves."""
+    url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
+    res = httpx.get(url, headers=_EMBED_HEADERS, follow_redirects=True, timeout=20.0)
+    
+    if res.status_code != 200:
+        raise Exception(f"Spotify retornou status {res.status_code}")
+
+    soup = BeautifulSoup(res.text, "html.parser")
+    script = soup.find("script", {"id": "resource"}) or soup.find("script", {"id": "__NEXT_DATA__"})
+    if not script or not script.string:
+        raise Exception("Dados da playlist não encontrados no HTML")
+
+    data = json.loads(script.string)
+    if "props" in data: # Estrutura moderna __NEXT_DATA__
+        entity = data.get("props", {}).get("pageProps", {}).get("state", {}).get("data", {}).get("entity", {})
+        track_list = entity.get("trackList") or entity.get("tracks", {}).get("items") or []
+    else:
+        track_list = data.get("trackList") or []
+
+    return {"tracks": [t for item in track_list if (t := _parse_track(item))]}
 
 @app.post("/api/scrape")
 def api_scrape(req: ScrapeRequest):

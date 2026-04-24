@@ -448,7 +448,7 @@ function addSongToContainer(track, container) {
   img.alt = escapeHtml(track.title);
   img.loading = 'lazy';
   // Configuração crítica para CORS e html2canvas (PNG Export)
-  img.crossOrigin = "anonymous"; // Deve ser definido antes de setar o src
+  img.setAttribute('crossorigin', 'anonymous');
   img.src = track.cover || placeholder;
 
   // Fallback se a imagem do Spotify falhar ou for bloqueada
