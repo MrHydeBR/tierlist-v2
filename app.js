@@ -258,7 +258,7 @@ async function loadPlaylist(playlistUrl, token) {
 
     const playlistId = extractPlaylistId(playlistUrl);
     let count = 0;
-    let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100&fields=next,items(track(id,name,artists(name),album(images)))`;
+    let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
 
     while (nextUrl) {
       const res = await fetch(nextUrl, {
@@ -267,6 +267,7 @@ async function loadPlaylist(playlistUrl, token) {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        console.error('Spotify error body:', body);
         throw new Error(`Spotify ${res.status}: ${body?.error?.message || res.statusText}`);
       }
 
