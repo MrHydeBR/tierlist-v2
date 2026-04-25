@@ -39,32 +39,62 @@ def _extract_playlist_id(url: str) -> str:
     return url.strip()
 
 
+def _extract_cover(item: dict) -> str:
+    # Direct imageUrl (older embed format)
+    cover = item.get("imageUrl") or ""
+    if cover:
+        return cover
+
+    album = item.get("album") or {}
+
+    # Newer embed: album.coverArt.sources[0].url
+    sources = album.get("coverArt", {}).get("sources", [])
+    if sources:
+        return sources[0].get("url", "")
+
+    # Older embed: album.images[0].url
+    images = album.get("images", [])
+    if images:
+        return images[0].get("url", "")
+
+    # Direct coverArt on item
+    sources = (item.get("coverArt") or {}).get("sources", [])
+    if sources:
+        return sources[0].get("url", "")
+
+    # Direct images list on item
+    images = item.get("images", [])
+    if isinstance(images, list) and images:
+        return images[0].get("url", "")
+
+    return ""
+
+
 def _parse_track(item: dict) -> dict | None:
+    # Newer __NEXT_DATA__ wraps the actual track inside a "track" key
+    if "track" in item and isinstance(item["track"], dict):
+        item = item["track"]
+
     uri = item.get("uri", "")
     track_id = item.get("id") or (uri.split(":")[-1] if ":" in uri else uri)
     if not track_id:
         return None
 
-    title = item.get("title") or item.get("name") or "Sem título"
-    subtitle = item.get("subtitle") or ""
+    title = item.get("name") or item.get("title") or "Sem título"
+
     artists = item.get("artists") or []
-    artist = subtitle or ", ".join(a.get("name", "") for a in artists) or "Desconhecido"
+    artist_names = []
+    for a in artists:
+        if isinstance(a, dict):
+            # Newer: {"uri": ..., "profile": {"name": "..."}}
+            name = a.get("name") or a.get("profile", {}).get("name", "")
+            if name:
+                artist_names.append(name)
+    artist = ", ".join(artist_names) or item.get("subtitle") or "Desconhecido"
 
-    cover = item.get("imageUrl")
-    for field in ["image", "images", "coverArt", "album"]:
-        if cover:
-            break
-        img_data = item.get(field)
-        if not img_data:
-            continue
-        if field == "album" and isinstance(img_data, dict):
-            img_data = img_data.get("images", [])
-        if isinstance(img_data, list) and img_data:
-            cover = img_data[0].get("url") or (img_data[0].get("sources") or [{}])[0].get("url")
-        elif isinstance(img_data, dict):
-            cover = img_data.get("url") or (img_data.get("sources") or [{}])[0].get("url")
+    cover = _extract_cover(item)
 
-    return {"id": track_id, "title": title, "artist": artist, "cover": cover or ""}
+    return {"id": track_id, "title": title, "artist": artist, "cover": cover}
 
 
 def _scrape_embed(playlist_id: str) -> tuple[str, list[dict]]:
@@ -111,8 +141,12 @@ def _scrape_embed(playlist_id: str) -> tuple[str, list[dict]]:
         or data.get("data", {}).get("entity", {}).get("name")
         or ""
     )
+    if track_list:
+        logger.info("Estrutura do primeiro item: %s", json.dumps(track_list[0])[:1000])
+
     tracks = [t for item in track_list if (t := _parse_track(item))]
-    logger.info("Playlist '%s': %d músicas extraídas", playlist_name, len(tracks))
+    logger.info("Playlist '%s': %d músicas extraídas (cover sample: %s)",
+                playlist_name, len(tracks), tracks[0].get("cover") if tracks else "n/a")
 
     return playlist_name, tracks
 
