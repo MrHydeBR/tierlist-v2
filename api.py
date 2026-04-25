@@ -40,29 +40,26 @@ def _extract_playlist_id(url: str) -> str:
 
 
 def _extract_cover(item: dict) -> str:
-    # Direct imageUrl (older embed format)
-    cover = item.get("imageUrl") or ""
-    if cover:
-        return cover
+    # Older embed: imageUrl direto
+    if item.get("imageUrl"):
+        return item["imageUrl"]
 
-    album = item.get("album") or {}
+    # Newer __NEXT_DATA__: albumOfTrack.coverArt.sources
+    for album_key in ("albumOfTrack", "album"):
+        album = item.get(album_key) or {}
+        sources = album.get("coverArt", {}).get("sources", [])
+        if sources:
+            return sources[0].get("url", "")
+        images = album.get("images", [])
+        if images:
+            return images[0].get("url", "")
 
-    # Newer embed: album.coverArt.sources[0].url
-    sources = album.get("coverArt", {}).get("sources", [])
-    if sources:
-        return sources[0].get("url", "")
-
-    # Older embed: album.images[0].url
-    images = album.get("images", [])
-    if images:
-        return images[0].get("url", "")
-
-    # Direct coverArt on item
+    # coverArt direto no item
     sources = (item.get("coverArt") or {}).get("sources", [])
     if sources:
         return sources[0].get("url", "")
 
-    # Direct images list on item
+    # images direto no item
     images = item.get("images", [])
     if isinstance(images, list) and images:
         return images[0].get("url", "")
@@ -71,7 +68,7 @@ def _extract_cover(item: dict) -> str:
 
 
 def _parse_track(item: dict) -> dict | None:
-    # Newer __NEXT_DATA__ wraps the actual track inside a "track" key
+    # __NEXT_DATA__ envolve a track numa chave "track"
     if "track" in item and isinstance(item["track"], dict):
         item = item["track"]
 
@@ -82,11 +79,15 @@ def _parse_track(item: dict) -> dict | None:
 
     title = item.get("name") or item.get("title") or "Sem título"
 
-    artists = item.get("artists") or []
+    # Newer: artists = {"items": [{"profile": {"name": "..."}}]}
+    # Older: artists = [{"name": "..."}]
+    artists_raw = item.get("artists") or []
+    if isinstance(artists_raw, dict):
+        artists_raw = artists_raw.get("items", [])
+
     artist_names = []
-    for a in artists:
+    for a in artists_raw:
         if isinstance(a, dict):
-            # Newer: {"uri": ..., "profile": {"name": "..."}}
             name = a.get("name") or a.get("profile", {}).get("name", "")
             if name:
                 artist_names.append(name)
